@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  api:
+    name: API (lint, typecheck, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: blueprint
+          POSTGRES_PASSWORD: blueprint
+          POSTGRES_DB: blueprint
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U blueprint"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - run: uv sync --all-extras
+      - run: uv run ruff check .
+      - run: uv run mypy api services pipeline models integrations eval config.py worker.py
+      - run: uv run pytest
+        env:
+          DATABASE_URL: postgresql+psycopg://blueprint:blueprint@localhost:5432/blueprint
+          REDIS_URL: redis://localhost:6379/0
+
+  web:
+    name: Web (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint --workspaces --if-present
+      - run: npm run typecheck --workspaces --if-present
+      - run: npm run build --workspace=@blueprint/web

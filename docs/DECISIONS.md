@@ -241,3 +241,19 @@ Template: Decision / Reason / Alternatives Considered / Tradeoffs / Status / Fut
 **Status:** Accepted, explicitly conditional.
 
 **Future reconsideration:** revisit if/when `packages/` grows enough that build-graph orchestration or install speed becomes a measured pain point — not preemptively.
+
+---
+
+### ADR-018 — Placeholder embedding dimension (1536) pending Stage 4's model comparison
+
+**Decision:** all `vector` columns (`code_chunks.embedding`, `doc_chunks.embedding`, `issues.embedding`) are defined at a fixed width of 1536 dimensions in the Phase 0 migration, explicitly flagged provisional.
+
+**Reason:** `ARCHITECTURE.md` §10 deliberately leaves the embedding model choice open pending an early accuracy/cost comparison (routed via OpenRouter) — that comparison is itself a Phase 0 deliverable ("embeddings + hybrid retrieval interface"), not yet done. But pgvector requires a fixed dimension per column at schema-definition time, and the schema has to exist before that comparison can be run against real data. This is the same shape of problem ADR-009 already solved for the absence-claim confidence ceiling: ship a documented, explicitly-provisional placeholder now rather than block schema work on a decision that can only be made empirically. 1536 is chosen as the placeholder because it's the dimension of the most common current-generation embedding models (e.g. OpenAI `text-embedding-3-small`), making it a reasonable default to migrate away from rather than toward if the eventual choice differs.
+
+**Alternatives considered:** a variable-width column / no fixed dimension (rejected — pgvector's indexing (HNSW, `ARCHITECTURE.md` §11) requires a fixed dimension; there is no deferred-width option that still gets index support); blocking schema work until the embedding model is chosen (rejected — this would stall Phase 0's DB schema PR on a decision that isn't Phase 0's job to make, per `PHASES.md`'s stage-by-stage sequencing).
+
+**Tradeoffs accepted:** if the eventual embedding model comparison lands on a different dimension, every `vector` column needs a migration (drop/recreate, since pgvector can't `ALTER` a column's dimension in place) and a full re-embedding pass. Acceptable because Phase 0 has no production data yet — this migration is cheapest before real embeddings exist, not after.
+
+**Status:** Accepted, explicitly provisional — same status class as ADR-009.
+
+**Future reconsideration:** mandatory review at the same point as ADR-009: once Stage 4's embedding model accuracy/cost comparison actually runs. Track together, since both are "placeholder pending the same piece of missing data."

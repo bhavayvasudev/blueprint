@@ -1,0 +1,16 @@
+{
+  "name": "blueprint",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "packages/ui",
+    "packages/shared-types"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@blueprint/web",
+    "build": "npm run build --workspace=@blueprint/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
