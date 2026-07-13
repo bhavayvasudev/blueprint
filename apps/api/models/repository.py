@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -9,6 +10,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.db import Base
 from models.types import ConnectionStatus, SnapshotStatus, StructuralConfidence
+
+if TYPE_CHECKING:
+    from models.installation import Installation
 
 
 class User(Base):
@@ -21,6 +25,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     repositories: Mapped[list["Repository"]] = relationship(back_populates="user")
+    installations: Mapped[list["Installation"]] = relationship(back_populates="user")
 
 
 class Repository(Base):
@@ -28,6 +33,12 @@ class Repository(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    # DECISIONS.md ADR-024: which installation grants Blueprint access to
+    # this repository — required to mint the installation token that
+    # ingestion clones with. Not nullable: every repository connected
+    # through the GitHub App flow has exactly one owning installation,
+    # and Phase 0 has no pre-existing data to backfill.
+    installation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("installations.id"), index=True)
     github_repo_id: Mapped[str] = mapped_column(String, unique=True)
     full_name: Mapped[str] = mapped_column(String)
     default_branch: Mapped[str] = mapped_column(String)
@@ -39,6 +50,7 @@ class Repository(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="repositories")
+    installation: Mapped["Installation"] = relationship(back_populates="repositories")
     snapshots: Mapped[list["RepoSnapshot"]] = relationship(back_populates="repository")
 
 

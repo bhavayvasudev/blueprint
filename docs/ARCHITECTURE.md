@@ -187,7 +187,9 @@ PostgreSQL, pgvector extension. This is the v2-corrected schema — see `DECISIO
 
 `users` — id, github_id, email, name, created_at.
 
-`repositories` — id, user_id, github_repo_id, full_name, default_branch, private, last_synced_sha, last_synced_at, connection_status.
+`installations` — id, user_id, provider, external_id, account_login, account_type (user/organization), status (active/revoked), created_at, updated_at. Not in this document's original schema — added by `DECISIONS.md` ADR-024 during PR3 (GitHub App auth): minting a GitHub App installation access token requires an installation ID, and nothing in the original schema recorded which installation a connected repository belongs to. `provider` is deliberately not assumed to be `"github"` (`DECISIONS.md` ADR-023's provider abstraction); `account_type` exists so organization-owned installations are representable now, ahead of any org-specific UI.
+
+`repositories` — id, user_id, installation_id (FK to `installations.id`, ADR-024 — required, since every connected repository has exactly one owning installation), github_repo_id, full_name, default_branch, private, last_synced_sha, last_synced_at, connection_status.
 
 `repo_snapshots` — id, repository_id, commit_sha, created_at, status (indexing/ready/failed). Every downstream table hangs off a snapshot; snapshots are immutable and historical (§2).
 
@@ -221,6 +223,10 @@ Indexes: HNSW on all `embedding` columns; btree on foreign keys and `(repository
 
 FastAPI, versioned under `/api/v1`. Representative surface:
 
+`GET /auth/login`, `GET /auth/callback` — GitHub OAuth login (`DECISIONS.md` ADR-024); issues Blueprint's own short-lived session JWT as an httpOnly cookie, never the GitHub user token itself.
+`GET /auth/me`, `POST /auth/logout` — current-session introspection and session termination.
+`GET /auth/github/install`, `GET /auth/github/install/callback` — GitHub App installation flow; the callback persists an `installations` row and never itself fetches repository content.
+`GET /repos/available?installation_id=` — repositories one installation grants access to, via the `RepositoryProvider` abstraction (`DECISIONS.md` ADR-023), never a direct GitHub call from this layer.
 `POST /repos/connect`, `GET /repos`, `GET /repos/{id}` — connection and listing.
 `POST /repos/{id}/sync` — trigger a pipeline run (manual in MVP).
 `GET /repos/{id}/snapshots/{snapshot_id}/findings?type=` — the core read endpoint; almost every UI surface is a filtered view over this.

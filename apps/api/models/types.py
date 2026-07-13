@@ -38,3 +38,22 @@ class GraphType(StrEnum):
 
     KNOWLEDGE = "knowledge"
     REPOSITORY = "repository"
+
+
+class InstallationStatus(StrEnum):
+    """DECISIONS.md ADR-024: `installations.status`. Revocation is detected
+    reactively (a 404 from GitHub on an installation-scoped call flips this
+    to REVOKED) since webhook-driven detection is v1.1, not this PR."""
+
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+
+class AccountType(StrEnum):
+    """The GitHub account type an installation belongs to — a user account
+    or an organization. Present now (DECISIONS.md ADR-024) so organization
+    support is a data shape that already exists, not a later migration,
+    even though no org-specific UI/permissions ship in this PR."""
+
+    USER = "user"
+    ORGANIZATION = "organization"

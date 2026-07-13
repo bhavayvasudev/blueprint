@@ -3,27 +3,48 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 
+from models.installation import Installation
 from models.repository import Repository, RepoSnapshot, User
-from models.types import ConnectionStatus, SnapshotStatus
+from models.types import AccountType, ConnectionStatus, InstallationStatus, SnapshotStatus
 
 
 @pytest.fixture
-def snapshot(db_session: Session) -> RepoSnapshot:
-    """A real, persisted (flushed, uncommitted) RepoSnapshot with its
-    required User/Repository parents — shared setup for every
-    integration test under tests/services/."""
-    user = User(
+def user(db_session: Session) -> User:
+    """A real, persisted (flushed, uncommitted) User with no installations
+    or repositories — the minimal starting point for auth/installation/
+    repository-connection service tests."""
+    new_user = User(
         id=uuid.uuid4(),
         github_id=f"test-{uuid.uuid4()}",
         email=f"{uuid.uuid4()}@example.com",
         name="Test",
     )
-    db_session.add(user)
+    db_session.add(new_user)
+    db_session.flush()
+    return new_user
+
+
+@pytest.fixture
+def snapshot(db_session: Session, user: User) -> RepoSnapshot:
+    """A real, persisted (flushed, uncommitted) RepoSnapshot with its
+    required User/Installation/Repository parents — shared setup for every
+    ingestion/graph/retrieval integration test under tests/services/."""
+    installation = Installation(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        provider="github",
+        external_id=str(uuid.uuid4()),
+        account_login="test-account",
+        account_type=AccountType.USER,
+        status=InstallationStatus.ACTIVE,
+    )
+    db_session.add(installation)
     db_session.flush()
 
     repository = Repository(
         id=uuid.uuid4(),
         user_id=user.id,
+        installation_id=installation.id,
         github_repo_id=str(uuid.uuid4()),
         full_name="test/sample",
         default_branch="main",

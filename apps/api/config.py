@@ -20,9 +20,23 @@ class Settings(BaseSettings):
     github_app_private_key: str = ""
     github_app_client_id: str = ""
     github_app_client_secret: str = ""
+    github_app_slug: str = ""
     github_webhook_secret: str = ""
 
     jwt_secret: str = ""
+
+    # DECISIONS.md ADR-023: which RepositoryProvider implementation
+    # integrations/repository/registry.py hands back. "github" is the
+    # only MVP implementation; the value exists as a config seam so a
+    # future GitLab/Bitbucket/Azure DevOps provider is a config change,
+    # not a rewrite of services/repository_connection_service.py.
+    repository_provider: str = "github"
+
+    # Where GitHub redirects back to after OAuth/installation, and where
+    # this API's own callback endpoints are reachable from GitHub's side
+    # — both must be real, reachable URLs outside local dev.
+    frontend_url: str = "http://localhost:3000"
+    api_base_url: str = "http://localhost:8000"
 
     openrouter_api_key: str = ""
 
