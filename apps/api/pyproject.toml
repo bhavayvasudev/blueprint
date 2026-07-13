@@ -33,6 +33,9 @@ dev = [
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+# Fixture source snippets are deliberately minimal/imperfect test input
+# for the extraction pipeline, not real project code.
+extend-exclude = ["tests/pipeline/ingestion/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
