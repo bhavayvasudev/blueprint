@@ -15,7 +15,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    github_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+    github_id: Mapped[str] = mapped_column(String, unique=True)
     email: Mapped[str] = mapped_column(String, unique=True)
     name: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -28,7 +28,7 @@ class Repository(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
-    github_repo_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+    github_repo_id: Mapped[str] = mapped_column(String, unique=True)
     full_name: Mapped[str] = mapped_column(String)
     default_branch: Mapped[str] = mapped_column(String)
     private: Mapped[bool] = mapped_column(Boolean)

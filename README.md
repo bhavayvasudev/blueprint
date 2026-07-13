@@ -40,17 +40,28 @@ Phase 0 (Foundation & Deterministic Ingestion) — see `docs/PHASES.md` and `doc
 
 ## Development
 
-Backend (`apps/api/`): Python 3.12, managed with [`uv`](https://github.com/astral-sh/uv) (see `docs/DECISIONS.md` ADR-016).
+**Local Postgres (pgvector) + Redis:**
+
+```
+docker compose -f infra/docker/docker-compose.yml up -d
+```
+
+**Backend** (`apps/api/`): Python 3.12, managed with [`uv`](https://github.com/astral-sh/uv) (see `docs/DECISIONS.md` ADR-016).
 
 ```
 cd apps/api
 uv sync
+cp .env.example .env
+uv run alembic upgrade head
 uv run pytest
+uv run uvicorn api.main:app --reload
 ```
 
-Frontend (`apps/web/`): Node 24, npm workspaces (see `docs/DECISIONS.md` ADR-017).
+Run the worker in a second terminal: `uv run python worker.py`.
+
+**Frontend** (`apps/web/`): Node 24, npm workspaces (see `docs/DECISIONS.md` ADR-017).
 
 ```
 npm install
-npm run dev --workspace=apps/web
+npm run dev --workspace=@blueprint/web
 ```

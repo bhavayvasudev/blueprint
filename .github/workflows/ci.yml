@@ -32,7 +32,8 @@ jobs:
           version: "latest"
       - run: uv sync --all-extras
       - run: uv run ruff check .
-      - run: uv run mypy api services pipeline models integrations eval config.py worker.py
+      - run: uv run mypy api services pipeline models integrations eval migrations config.py worker.py
+      - run: uv run alembic upgrade head
       - run: uv run pytest
         env:
           DATABASE_URL: postgresql+psycopg://blueprint:blueprint@localhost:5432/blueprint
