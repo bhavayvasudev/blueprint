@@ -35,5 +35,5 @@ Thumbs.db
 # Logs
 *.log
 
-AGENTS.md
-CLAUDE.md
+**/AGENTS.md
+**/CLAUDE.md
