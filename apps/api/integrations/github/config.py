@@ -63,14 +63,29 @@ def _normalize_private_key(raw: str) -> str:
     """Accepts a PEM either with real newlines or with literal `\\n`
     escapes — the latter is how most PaaS providers (Railway, Vercel,
     Render) require multi-line secrets to be entered as a single-line
-    environment variable."""
+    environment variable, and the only form that survives an unquoted
+    .env value: python-dotenv reads .env line by line and has no
+    support for a raw multi-line value, so pasting one directly
+    silently truncates to just the "-----BEGIN...-----" line — no
+    parse error, just a key that's missing its body and END marker.
+    Checking for both markers here (not just "BEGIN"/"PRIVATE KEY",
+    which a truncated key still contains) turns that into a fail-fast
+    error instead of a confusing failure deep inside `generate_app_jwt`.
+    """
     key = raw.replace("\\n", "\n").strip()
-    if "BEGIN" not in key or "PRIVATE KEY" not in key:
+    has_begin = "BEGIN" in key and "PRIVATE KEY" in key
+    has_end = "END" in key and "PRIVATE KEY" in key
+    if not has_begin or not has_end:
         raise GitHubAppConfigError(
             ["GITHUB_APP_PRIVATE_KEY"],
             detail=(
-                "GITHUB_APP_PRIVATE_KEY does not look like a PEM-encoded private "
-                "key (expected a '-----BEGIN ... PRIVATE KEY-----' block)."
+                "GITHUB_APP_PRIVATE_KEY does not look like a complete PEM-encoded "
+                "private key (expected both '-----BEGIN ... PRIVATE KEY-----' and "
+                "'-----END ... PRIVATE KEY-----' markers). If you pasted a raw, "
+                "multi-line .pem file directly into .env, this is likely "
+                "truncation, not a bad key — use "
+                "`uv run python scripts/format_private_key.py path/to/key.pem` "
+                "to produce a single-line, correctly escaped value instead."
             ),
         )
     return key

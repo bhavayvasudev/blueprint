@@ -124,3 +124,70 @@ def test_github_install_callback_with_setup_action_request_is_pending(
     )
     assert response.status_code in (302, 307)
     assert "install=pending" in response.headers["location"]
+
+
+def test_callback_with_install_purpose_token_completes_install_not_login(
+    client: TestClient, test_settings: Settings
+) -> None:
+    """Regression test: some GitHub Apps ("Request user authorization
+    during installation" enabled) deliver the post-install redirect to
+    `/callback` (the Authorization callback URL) instead of
+    `/github/install/callback` (the Setup URL), still carrying a
+    `github_install`-purpose state token. `/callback` must dispatch this
+    to the same install-completion path rather than rejecting it for not
+    being an `oauth_login` token."""
+    from services.auth_service import STATE_PURPOSE_INSTALL, create_state_token
+
+    state = create_state_token(STATE_PURPOSE_INSTALL, settings=test_settings, subject="whatever")
+    response = client.get(
+        "/api/v1/auth/callback",
+        params={"code": "unused", "state": state, "setup_action": "request"},
+        follow_redirects=False,
+    )
+    assert response.status_code in (302, 307)
+    assert "install=pending" in response.headers["location"]
+
+
+def test_github_install_callback_with_login_purpose_token_still_rejected(
+    client: TestClient, test_settings: Settings
+) -> None:
+    """The Setup URL must stay strict: a login-purpose token arriving
+    there is still an error, not silently accepted."""
+    from services.auth_service import STATE_PURPOSE_LOGIN, create_state_token
+
+    state = create_state_token(STATE_PURPOSE_LOGIN, settings=test_settings)
+    response = client.get(
+        "/api/v1/auth/github/install/callback",
+        params={"state": state, "setup_action": "request"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
+def test_callback_with_unknown_purpose_token_returns_400(test_settings: Settings) -> None:
+    """A token of neither known purpose must still be rejected at
+    `/callback` — dispatching on `github_install` must not weaken the
+    strict check for everything else."""
+    import jwt
+    from fastapi.testclient import TestClient as _TestClient
+
+    from api.main import app
+    from config import get_settings
+    from models.db import get_session
+
+    token = jwt.encode(
+        {"purpose": "something_else", "iat": 0, "exp": 99999999999},
+        test_settings.jwt_secret,
+        algorithm="HS256",
+    )
+    app.dependency_overrides[get_settings] = lambda: test_settings
+    app.dependency_overrides[get_session] = lambda: None
+    try:
+        response = _TestClient(app).get(
+            "/api/v1/auth/callback",
+            params={"code": "unused", "state": token},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.clear()

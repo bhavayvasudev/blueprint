@@ -4,7 +4,7 @@ from pipeline.retrieval.interfaces import ScoredChunk, merge_hybrid_results
 
 
 def _chunk(chunk_id: uuid.UUID, chunk_type: str = "code", score: float = 0.0) -> ScoredChunk:
-    return ScoredChunk(chunk_id=chunk_id, chunk_type=chunk_type, score=score)  # type: ignore[arg-type]
+    return ScoredChunk(chunk_id=chunk_id, chunk_type=chunk_type, score=score)
 
 
 def test_merge_deterministic_for_identical_inputs() -> None:

@@ -9,7 +9,9 @@ def _settings(**overrides: object) -> Settings:
     base: dict[str, object] = {
         "_env_file": None,
         "github_app_id": "123",
-        "github_app_private_key": "-----BEGIN RSA PRIVATE KEY-----REDACTED-----END RSA PRIVATE KEY-----",
+        "github_app_private_key": (
+            "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODYFORTESTSONLY\n-----END RSA PRIVATE KEY-----"
+        ),
         "github_app_client_id": "client-id",
         "github_app_client_secret": "client-secret",
         "github_app_slug": "blueprint-dev",
@@ -49,7 +51,9 @@ def test_required_env_vars_are_documented_on_the_class() -> None:
 
 def test_private_key_with_escaped_newlines_is_normalized() -> None:
     settings = _settings(
-        github_app_private_key="-----BEGIN RSA PRIVATE KEY-----REDACTED-----END RSA PRIVATE KEY-----"
+        github_app_private_key=(
+            "-----BEGIN RSA PRIVATE KEY-----\\nFAKEKEYBODYFORTESTSONLY\\n-----END RSA PRIVATE KEY-----"
+        )
     )
     config = GitHubAppConfig.from_settings(settings)
     assert "\\n" not in config.private_key
@@ -58,5 +62,16 @@ def test_private_key_with_escaped_newlines_is_normalized() -> None:
 
 def test_private_key_not_looking_like_pem_raises() -> None:
     settings = _settings(github_app_private_key="not-a-pem-at-all")
-    with pytest.raises(GitHubAppConfigError, match="does not look like a PEM"):
+    with pytest.raises(GitHubAppConfigError, match="does not look like a"):
+        GitHubAppConfig.from_settings(settings)
+
+
+def test_private_key_truncated_to_begin_marker_only_raises() -> None:
+    """The exact failure mode of pasting a raw, multi-line .pem directly
+    into .env: python-dotenv silently keeps only the first line, which
+    still contains "BEGIN" and "PRIVATE KEY" but is missing the body and
+    END marker entirely. This must fail fast at config-build time, not
+    deep inside JWT signing."""
+    settings = _settings(github_app_private_key="-----BEGIN RSA PRIVATE KEY-----")
+    with pytest.raises(GitHubAppConfigError, match="does not look like a complete"):
         GitHubAppConfig.from_settings(settings)

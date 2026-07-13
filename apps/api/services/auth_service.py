@@ -85,25 +85,45 @@ def create_state_token(purpose: str, *, settings: Settings, subject: str | None 
     now = datetime.now(UTC)
     payload = {
         "purpose": purpose,
-        "sub": subject,
         "iat": now,
         "exp": now + STATE_TOKEN_TTL,
     }
+    if subject is not None:
+        # RFC 7519: `sub` MUST be a StringOrURI when present, so omit it
+        # entirely rather than encoding a `null` — PyJWT's decode-time
+        # `verify_sub` check rejects a present-but-non-string claim.
+        payload["sub"] = subject
     return jwt.encode(payload, secret, algorithm=_ALGORITHM)
 
 
-def verify_state_token(token: str, *, purpose: str, settings: Settings) -> StateClaims:
+def decode_state_token(token: str, *, settings: Settings) -> StateClaims:
+    """Verifies signature and expiry only — does not assert a purpose.
+
+    GitHub's own routing decides which URL an OAuth/install redirect lands
+    on, and (per GitHub Apps' "request user authorization during
+    installation" behavior) an installation completion can legitimately
+    arrive at the login callback URL carrying a `github_install`-purpose
+    token. A caller that owns exactly one purpose should still use
+    `verify_state_token` for the strict, single-purpose check; a caller
+    that must serve more than one purpose (`api/v1/auth.py`'s `/callback`)
+    uses this to learn the real purpose first, then validates against
+    that — never against a purpose it merely hoped for.
+    """
     secret = _require_jwt_secret(settings)
     try:
         payload = jwt.decode(token, secret, algorithms=[_ALGORITHM])
     except jwt.PyJWTError as exc:
         raise InvalidOAuthState(f"State token invalid or expired: {exc}") from exc
-
-    if payload.get("purpose") != purpose:
-        raise InvalidOAuthState(
-            f"State token was issued for purpose {payload.get('purpose')!r}, expected {purpose!r}"
-        )
     return StateClaims(purpose=payload["purpose"], subject=payload.get("sub"))
+
+
+def verify_state_token(token: str, *, purpose: str, settings: Settings) -> StateClaims:
+    claims = decode_state_token(token, settings=settings)
+    if claims.purpose != purpose:
+        raise InvalidOAuthState(
+            f"State token was issued for purpose {claims.purpose!r}, expected {purpose!r}"
+        )
+    return claims
 
 
 def upsert_user(db: Session, profile: GitHubUserProfile) -> User:

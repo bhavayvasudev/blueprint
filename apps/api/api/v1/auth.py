@@ -22,8 +22,10 @@ from services.auth_service import (
     SESSION_TOKEN_TTL,
     STATE_PURPOSE_INSTALL,
     STATE_PURPOSE_LOGIN,
+    StateClaims,
     create_session_token,
     create_state_token,
+    decode_state_token,
     upsert_user,
     verify_state_token,
 )
@@ -44,9 +46,29 @@ def login(settings: Settings = Depends(get_settings)) -> RedirectResponse:
 def callback(
     code: str,
     state: str,
+    installation_id: str | None = Query(default=None),
+    setup_action: str = Query(default="install"),
     db: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
+    # This URL is GitHub's "Authorization callback URL". Ordinarily that's
+    # only ever hit by a plain login redirect (`oauth_login` state) — but
+    # if the GitHub App has "Request user authorization (OAuth) during
+    # installation" enabled, GitHub *also* sends the post-install redirect
+    # here (not to the Setup URL) carrying the `github_install` state
+    # created by `github_install()`. Decode first to learn which flow this
+    # actually is, then validate strictly against that flow's own purpose
+    # — never assume `oauth_login` and never skip the purpose check.
+    claims = decode_state_token(state, settings=settings)
+    if claims.purpose == STATE_PURPOSE_INSTALL:
+        return _complete_install(
+            claims,
+            installation_id=installation_id,
+            setup_action=setup_action,
+            db=db,
+            settings=settings,
+        )
+
     verify_state_token(state, purpose=STATE_PURPOSE_LOGIN, settings=settings)
 
     config = GitHubAppConfig.from_settings(settings)
@@ -103,7 +125,24 @@ def github_install_callback(
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     claims = verify_state_token(state, purpose=STATE_PURPOSE_INSTALL, settings=settings)
+    return _complete_install(
+        claims, installation_id=installation_id, setup_action=setup_action, db=db, settings=settings
+    )
 
+
+def _complete_install(
+    claims: StateClaims,
+    *,
+    installation_id: str | None,
+    setup_action: str,
+    db: Session,
+    settings: Settings,
+) -> RedirectResponse:
+    """Shared by both routes GitHub may redirect an installation completion
+    to: `/github/install/callback` (the Setup URL) and `/callback` (when
+    "request user authorization during installation" routes it to the
+    Authorization callback URL instead). Callers must have already verified
+    `claims` against `STATE_PURPOSE_INSTALL`."""
     if setup_action == "request" or installation_id is None:
         # Org installation pending owner approval — nothing to fetch from
         # GitHub yet (the App isn't actually installed until approved).

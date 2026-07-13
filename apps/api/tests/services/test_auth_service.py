@@ -15,6 +15,7 @@ from services.auth_service import (
     SessionConfigError,
     create_session_token,
     create_state_token,
+    decode_state_token,
     upsert_user,
     verify_session_token,
     verify_state_token,
@@ -51,7 +52,12 @@ def test_expired_session_token_raises() -> None:
 def test_tampered_session_token_raises() -> None:
     settings = _settings()
     token = create_session_token(uuid.uuid4(), settings=settings)
-    tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+    # Flip a character in the middle, not the last one: base64url's last
+    # character can, depending on padding alignment, decode to the same
+    # bytes even after being changed, making tamper-detection tests that
+    # flip it flaky rather than reliably invalid.
+    mid = len(token) // 2
+    tampered = token[:mid] + ("a" if token[mid] != "a" else "b") + token[mid + 1 :]
     with pytest.raises(InvalidSessionToken):
         verify_session_token(tampered, settings=settings)
 
@@ -69,6 +75,30 @@ def test_state_token_wrong_purpose_raises_invalid_oauth_state() -> None:
     token = create_state_token(STATE_PURPOSE_LOGIN, settings=settings)
     with pytest.raises(InvalidOAuthState):
         verify_state_token(token, purpose=STATE_PURPOSE_INSTALL, settings=settings)
+
+
+def test_decode_state_token_does_not_check_purpose() -> None:
+    """`/callback` must learn a token's real purpose before it can decide
+    which purpose to strictly verify against — decode_state_token is the
+    signature/expiry-only primitive that makes that possible."""
+    settings = _settings()
+    token = create_state_token(STATE_PURPOSE_INSTALL, settings=settings, subject="user-123")
+    claims = decode_state_token(token, settings=settings)
+    assert claims.purpose == STATE_PURPOSE_INSTALL
+    assert claims.subject == "user-123"
+
+
+def test_decode_state_token_still_raises_on_bad_signature() -> None:
+    settings = _settings()
+    token = create_state_token(STATE_PURPOSE_LOGIN, settings=settings)
+    # Flip a character in the middle, not the last one: base64url's last
+    # character can, depending on padding alignment, decode to the same
+    # bytes even after being changed, making tamper-detection tests that
+    # flip it flaky rather than reliably invalid.
+    mid = len(token) // 2
+    tampered = token[:mid] + ("a" if token[mid] != "a" else "b") + token[mid + 1 :]
+    with pytest.raises(InvalidOAuthState):
+        decode_state_token(tampered, settings=settings)
 
 
 def test_expired_state_token_raises_invalid_oauth_state() -> None:

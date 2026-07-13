@@ -58,7 +58,10 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-exclude = ["^\\.venv/"]
+# Fixture source snippets are deliberately minimal/imperfect test input
+# for the extraction pipeline, not real project code (mirrors the ruff
+# exclusion above).
+exclude = ["^\\.venv/", "^tests/pipeline/ingestion/fixtures/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

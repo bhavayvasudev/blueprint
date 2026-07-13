@@ -59,6 +59,12 @@ uv run pytest
 uv run uvicorn api.main:app --reload
 ```
 
+Filling in `GITHUB_APP_PRIVATE_KEY`: don't paste the downloaded `.pem` file's raw contents into `.env` — a real multi-line value there silently truncates (see `.env.example`'s comment). Convert it first:
+
+```
+uv run python scripts/format_private_key.py path/to/downloaded-key.pem >> .env
+```
+
 Run the worker in a second terminal: `uv run python worker.py`.
 
 **Frontend** (`apps/web/`): Node 24, npm workspaces (see `docs/DECISIONS.md` ADR-017).

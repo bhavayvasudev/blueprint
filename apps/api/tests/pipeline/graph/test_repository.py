@@ -33,8 +33,11 @@ def test_build_repository_graph_groups_by_manifest_and_toplevel_fallback() -> No
     assert nodes_by_label["."].node_type == "module"
     assert nodes_by_label["legacy"].node_type == "module"
 
-    assert set(nodes_by_label["."].metadata["file_paths"]) == {"main.py", "importer.py"}
-    assert set(nodes_by_label["web"].metadata["file_paths"]) == {"web/component.tsx", "web/app.tsx"}
+    assert set(nodes_by_label["."].metadata["file_paths"]) == {"main.py", "importer.py"}  # type: ignore[call-overload]
+    assert set(nodes_by_label["web"].metadata["file_paths"]) == {  # type: ignore[call-overload]
+        "web/component.tsx",
+        "web/app.tsx",
+    }
     assert nodes_by_label["utils"].metadata["file_paths"] == ["utils/helper.py"]
     assert nodes_by_label["legacy"].metadata["file_paths"] == ["legacy/Old.java"]
 

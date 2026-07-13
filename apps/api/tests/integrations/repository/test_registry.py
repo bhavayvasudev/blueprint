@@ -10,7 +10,9 @@ def _settings(**overrides: object) -> Settings:
     base: dict[str, object] = {
         "_env_file": None,
         "github_app_id": "123",
-        "github_app_private_key": "-----BEGIN RSA PRIVATE KEY-----REDACTED-----END RSA PRIVATE KEY-----",
+        "github_app_private_key": (
+            "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODYFORTESTSONLY\n-----END RSA PRIVATE KEY-----"
+        ),
         "github_app_client_id": "client-id",
         "github_app_client_secret": "client-secret",
         "github_app_slug": "blueprint-dev",

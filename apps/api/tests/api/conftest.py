@@ -16,7 +16,7 @@ def test_settings() -> Settings:
         jwt_secret="test-secret-at-least-32-bytes-long",
         github_app_id="123",
         github_app_private_key=(
-            "-----BEGIN RSA PRIVATE KEY-----REDACTED-----END RSA PRIVATE KEY-----"
+            "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODYFORTESTSONLY\n-----END RSA PRIVATE KEY-----"
         ),
         github_app_client_id="client-id",
         github_app_client_secret="client-secret",
