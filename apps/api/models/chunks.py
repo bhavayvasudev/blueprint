@@ -24,6 +24,9 @@ class CodeChunk(Base):
     end_line: Mapped[int] = mapped_column(Integer)
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
     content_hash: Mapped[str] = mapped_column(String, index=True)
+    # DECISIONS.md ADR-020: the chunk's actual source slice, so keyword
+    # search doesn't depend on a live repo checkout being available.
+    content: Mapped[str] = mapped_column(String)
 
 
 class DocChunk(Base):

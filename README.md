@@ -46,6 +46,8 @@ Phase 0 (Foundation & Deterministic Ingestion) — see `docs/PHASES.md` and `doc
 docker compose -f infra/docker/docker-compose.yml up -d
 ```
 
+No Docker? `uv run pytest` still works without it — the test suite falls back to a real, ephemeral Postgres+pgvector instance (via `pgserver`, a bundled binary) when no `DATABASE_URL` is reachable, so every integration test still runs for real rather than skipping (see `docs/DECISIONS.md` ADR-022). Docker/`docker-compose` is only needed to run the API/worker themselves against a persistent local database.
+
 **Backend** (`apps/api/`): Python 3.12, managed with [`uv`](https://github.com/astral-sh/uv) (see `docs/DECISIONS.md` ADR-016).
 
 ```

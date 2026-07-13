@@ -26,6 +26,18 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str = ""
 
+    # DECISIONS.md ADR-021: which EmbeddingProvider implementation
+    # integrations/embeddings/registry.py hands back — swapping providers
+    # is this one config value, never a code change in callers.
+    # "local_hash" (no API key, no network) is the default so local dev
+    # and tests work with zero configuration; production deployments set
+    # this to "openrouter" explicitly (ARCHITECTURE.md §10).
+    embedding_provider: str = "local_hash"
+    # Only consulted by the "openrouter" provider — an OpenRouter model
+    # identifier, not fixed by this document (ARCHITECTURE.md §10: model
+    # choice left open pending Stage 4's own accuracy/cost comparison).
+    embedding_model: str = "openai/text-embedding-3-small"
+
     environment: str = "development"
 
 

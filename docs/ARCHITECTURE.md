@@ -193,7 +193,7 @@ PostgreSQL, pgvector extension. This is the v2-corrected schema — see `DECISIO
 
 `files` — id, snapshot_id, path, language, loc, is_generated, content_hash, structural_confidence (full/low, per §4's fallback handling).
 
-`code_chunks` — id, file_id, symbol_name, symbol_type, start_line, end_line, embedding (vector), content_hash.
+`code_chunks` — id, file_id, symbol_name, symbol_type, start_line, end_line, embedding (vector), content_hash, content (text — the chunk's source slice; DECISIONS.md ADR-020, matching `doc_chunks.content` so retrieval is self-contained in Postgres rather than depending on a live repo checkout being available).
 
 `doc_chunks` — id, snapshot_id, source_path, section_title, content, embedding (vector).
 
