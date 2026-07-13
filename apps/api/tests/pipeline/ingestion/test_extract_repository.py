@@ -14,10 +14,12 @@ def test_extract_repository_is_deterministic_and_complete() -> None:
     assert paths == [f.path for f in second_pass], "identical repo state must produce identical output"
 
     assert set(paths) == {
+        "importer.py",
         "legacy/Old.java",
         "main.py",
         "service/server.go",
         "utils/helper.py",
+        "web/app.tsx",
         "web/component.tsx",
     }
 

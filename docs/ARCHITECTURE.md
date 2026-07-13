@@ -197,9 +197,9 @@ PostgreSQL, pgvector extension. This is the v2-corrected schema — see `DECISIO
 
 `doc_chunks` — id, snapshot_id, source_path, section_title, content, embedding (vector).
 
-`graph_nodes` — id, snapshot_id, graph_type (knowledge/repository), node_type, label, metadata (jsonb).
+`graph_nodes` — id, snapshot_id, graph_type (knowledge/repository), node_type, label, metadata (jsonb), file_id (nullable FK to `files.id` — DECISIONS.md ADR-019; populated for Knowledge Graph nodes, which map 1:1 to a file, null for Repository Graph nodes, which roll up many).
 
-`graph_edges` — id, snapshot_id, graph_type, source_node_id, target_node_id, edge_type.
+`graph_edges` — id, snapshot_id, graph_type, source_node_id, target_node_id, edge_type, file_id (nullable FK to `files.id`, ADR-019 — the source node's file, i.e. the file whose parse produced the edge; null for Repository Graph edges).
 
 `findings` — id, snapshot_id, type (doc_mismatch/missing_dependency/debt/architecture_note/feature_status/roadmap_item/prompt), statement, evidence (jsonb array of {source_type, path/symbol/commit/issue_id, excerpt, verified}), reasoning, confidence (int, computed per `RULES.md`), affected_modules (jsonb), blocked_features (jsonb), impact, produced_by (agent/stage id), created_at, supersedes (nullable FK, per §2's immutability rule).
 

@@ -102,3 +102,34 @@ def discover_source_files(repo_root: Path) -> Iterator[Path]:
             continue
         if classify_language(path) is not None:
             yield path
+
+
+# ARCHITECTURE.md §3.3: "config/manifest signals (Dockerfiles, entrypoints,
+# conventional services/packages layout)" — the module/service boundary
+# signal Stage 3's Repository Graph rollup groups files by
+# (pipeline/graph/repository.py).
+MANIFEST_FILENAMES = {
+    "package.json",
+    "pyproject.toml",
+    "go.mod",
+    "Cargo.toml",
+    "Dockerfile",
+    "setup.py",
+}
+
+
+def find_manifest_directories(repo_root: Path) -> frozenset[str]:
+    """Repo-relative (posix-style) directories directly containing one of
+    `MANIFEST_FILENAMES`. A thin filesystem scan kept separate from Stage
+    3's actual rollup logic (`pipeline/graph/repository.py`), which takes
+    this as a plain `frozenset[str]` input instead of doing its own I/O —
+    that's what keeps the rollup itself a pure, easily-tested function."""
+    found: set[str] = set()
+    for path in repo_root.rglob("*"):
+        if not path.is_file() or path.name not in MANIFEST_FILENAMES:
+            continue
+        relative_dir = path.parent.relative_to(repo_root)
+        if any(part in EXCLUDED_DIRS for part in relative_dir.parts):
+            continue
+        found.add(relative_dir.as_posix())
+    return frozenset(found)
