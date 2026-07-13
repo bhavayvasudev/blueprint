@@ -15,10 +15,6 @@ node_modules/
 out/
 .turbo/
 npm-debug.log*
-# Exception: a fixture proving pipeline/ingestion's discovery.py actually
-# excludes node_modules/ — must stay tracked or that test degrades to
-# vacuously true after a fresh clone (no file to find, so nothing to exclude).
-!apps/api/tests/pipeline/ingestion/fixtures/sample_repo/node_modules/
 
 # Env / secrets
 .env
@@ -38,3 +34,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+AGENTS.md
+CLAUDE.md

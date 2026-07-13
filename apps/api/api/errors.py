@@ -6,6 +6,7 @@ they don't build error responses inline). Registered once, in
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
 
 from integrations.github.exceptions import (
     GitHubAppConfigError,
@@ -20,6 +21,7 @@ from integrations.github.exceptions import (
 from services.auth_service import SessionConfigError
 from services.installation_service import InstallationNotFound
 from services.repository_connection_service import RepositoryAlreadyConnected, RepositoryNotFound
+from services.snapshot_service import SnapshotNotFound
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -35,6 +37,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(GitHubAppNotInstalled)
     @app.exception_handler(InstallationNotFound)
     @app.exception_handler(RepositoryNotFound)
+    @app.exception_handler(SnapshotNotFound)
     def _not_found(_: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": str(exc)})
 
@@ -56,3 +59,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(GitHubIntegrationError)
     def _upstream_error(_: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+    @app.exception_handler(RedisError)
+    def _queue_unavailable(_: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": "Sync queue unavailable"})

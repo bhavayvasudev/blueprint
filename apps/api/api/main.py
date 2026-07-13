@@ -2,6 +2,7 @@
 §1) — no LLM reasoning runs here except Stage 11, added in Phase 7."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.errors import register_exception_handlers
 from api.v1.router import router as v1_router
@@ -22,6 +23,19 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Blueprint API", version="0.1.0", debug=settings.environment == "development"
+    )
+    # PR8: the frontend's Client Components (e.g. the sync trigger) call
+    # this API directly from the browser, cookie-authenticated
+    # (api/dependencies.py's session cookie) — credentialed cross-origin
+    # requests need an explicit origin allowlist, never "*"
+    # (allow_credentials=True is rejected by browsers when combined with
+    # a wildcard origin).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.frontend_url],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     register_exception_handlers(app)
     app.include_router(v1_router)

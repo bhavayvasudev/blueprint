@@ -191,7 +191,7 @@ PostgreSQL, pgvector extension. This is the v2-corrected schema — see `DECISIO
 
 `repositories` — id, user_id, installation_id (FK to `installations.id`, ADR-024 — required, since every connected repository has exactly one owning installation), github_repo_id, full_name, default_branch, private, last_synced_sha, last_synced_at, connection_status.
 
-`repo_snapshots` — id, repository_id, commit_sha, created_at, status (indexing/ready/failed). Every downstream table hangs off a snapshot; snapshots are immutable and historical (§2).
+`repo_snapshots` — id, repository_id, commit_sha (nullable — DECISIONS.md ADR-025: null until the sync job's clone resolves the real HEAD sha, populated once known, same shape as `status`), created_at, status (indexing/ready/failed). Every downstream table hangs off a snapshot; snapshots are immutable and historical (§2).
 
 `files` — id, snapshot_id, path, language, loc, is_generated, content_hash, structural_confidence (full/low, per §4's fallback handling).
 
@@ -228,9 +228,10 @@ FastAPI, versioned under `/api/v1`. Representative surface:
 `GET /auth/github/install`, `GET /auth/github/install/callback` — GitHub App installation flow; the callback persists an `installations` row and never itself fetches repository content.
 `GET /repos/available?installation_id=` — repositories one installation grants access to, via the `RepositoryProvider` abstraction (`DECISIONS.md` ADR-023), never a direct GitHub call from this layer.
 `POST /repos/connect`, `GET /repos`, `GET /repos/{id}` — connection and listing.
-`POST /repos/{id}/sync` — trigger a pipeline run (manual in MVP).
-`GET /repos/{id}/snapshots/{snapshot_id}/findings?type=` — the core read endpoint; almost every UI surface is a filtered view over this.
-`GET /repos/{id}/snapshots/{snapshot_id}/architecture-graph` — Repository Graph nodes/edges.
+`POST /repos/{id}/sync` — trigger a pipeline run (manual in MVP). Implemented in PR8 (DECISIONS.md ADR-025) as Stages 1-3 only (extraction + both graphs, no embeddings yet — see the ADR); returns 202 with the newly created snapshot (`status=indexing`, `commit_sha=null` until the clone resolves it) rather than holding the request open (RULES.md §14).
+`GET /repos/{id}/snapshots` — every snapshot for a repository, newest first. `GET /repos/{id}/snapshots/{snapshot_id}` — one snapshot's status. Both added in PR8 alongside `/sync`, since polling sync status needs somewhere to poll.
+`GET /repos/{id}/snapshots/{snapshot_id}/findings?type=` — the core read endpoint; almost every UI surface is a filtered view over this. Not yet implemented — `findings` itself doesn't exist until Phase 1.
+`GET /repos/{id}/snapshots/{snapshot_id}/architecture-graph` — Repository Graph nodes/edges, plus the deterministic Phase 0 status data the Architecture View renders alongside it (language mix, Tree-sitter full/low confidence counts, Knowledge Graph node/edge counts) — implemented in PR8, backed by `services/snapshot_service.get_architecture_graph`.
 `GET /repos/{id}/snapshots/{snapshot_id}/dependency-graph` — Dependency Findings + relations, blast radius precomputed.
 `GET /repos/{id}/snapshots/{snapshot_id}/maturity` — `maturity_scores` + `understanding_confidence`, returned as two distinct objects, never merged server-side (enforcing ADR-011 at the API boundary, not just in the frontend).
 `GET /repos/{id}/timeline` — cross-snapshot history.

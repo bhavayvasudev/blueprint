@@ -53,6 +53,21 @@ def upsert_installation(
     return installation
 
 
+def list_installations_for_user(db: Session, *, user: User) -> list[Installation]:
+    """Every active installation the user has connected — backs
+    `GET /installations` (PR8), the picker the "Connect a repository" flow
+    needs to know which installation to call `/repos/available` with."""
+    return list(
+        db.execute(
+            select(Installation).where(
+                Installation.user_id == user.id, Installation.status == InstallationStatus.ACTIVE
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 def get_installation_for_user(db: Session, *, user: User, installation_id: uuid.UUID) -> Installation:
     """Row-level ownership check at the application layer (ARCHITECTURE.md
     §17's Postgres RLS isn't wired up yet — see DECISIONS.md ADR-024).
