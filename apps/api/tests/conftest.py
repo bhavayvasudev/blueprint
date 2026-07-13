@@ -45,7 +45,7 @@ def _embedded_postgres_engine() -> Iterator[Engine]:
     import pgserver
 
     pgdata = Path(tempfile.gettempdir()) / "blueprint-test-pgserver"
-    server = pgserver.get_server(pgdata)
+    server = pgserver.get_server(pgdata)  # type: ignore[attr-defined]
     try:
         # pgserver.get_uri() returns a plain postgresql:// URI (implying
         # psycopg2); the project's driver is psycopg (v3) — see

@@ -69,3 +69,29 @@ Full suite: **53 passed, 0 skipped** (first time skip-free), ruff and mypy --str
 **Status:** Phase 0, PR1, PR2, PR4, PR5, PR6, and PR7 complete and committed.
 
 **Next:** PR3 (GitHub App auth) and PR8 (bare Architecture View, frontend) are what remain of Phase 0's suggested PR list — both still gated on a real GitHub App being registered in GitHub's UI, a manual step outside this environment's reach; flagged for the project owner. Everything else in Phase 0 (deterministic extraction, Knowledge Graph, Repository Graph, embeddings + hybrid retrieval) is now real, tested, and committed.
+
+---
+
+## 2026-07-13 — PR3 (GitHub App authentication) shipped
+
+PR3 (GitHub App auth, `ARCHITECTURE.md` §14) shipped as production-grade authentication, not a demo login — built the whole flow, provider abstraction, and error handling to spec even though (per the prior entry) actually registering a real GitHub App in GitHub's UI remains a manual, human step outside this environment's reach. Config validation fails fast (`GitHubAppConfig.from_settings()`, called eagerly at `api/main.py` startup) rather than deferring to first use, so a misconfigured deployment never silently serves broken auth routes.
+
+**Two abstraction seams, both requested explicitly ahead of implementation, recorded in new ADRs:**
+
+1. **DECISIONS.md ADR-023** — `integrations/repository/base.RepositoryProvider`, a `typing.Protocol` (`get_installation`, `list_repositories`, `get_repository`, `get_clone_credentials`), mirroring ADR-021's embeddings pattern exactly. `GitHubRepositoryProvider` is the only MVP implementation; `integrations/repository/registry.py` is the only place a concrete provider class is named. `services/repository_connection_service.py` depends only on the Protocol — never on `integrations.github.*` directly for repository access. Login/OAuth is deliberately left GitHub-specific (no stated multi-provider requirement for identity).
+2. **DECISIONS.md ADR-024** — the GitHub App auth design itself: RS256 App JWT (≤10 min) mints installation access tokens (~1hr, GitHub-imposed TTL) on demand, cached in-process only (`integrations/github/installation_tokens.InstallationTokenCache`); the GitHub user OAuth token from login is never persisted at all, not even transiently beyond the callback request; Blueprint's own session JWT (httpOnly cookie) is the only credential a browser ever holds. CSRF protection for both OAuth login and App installation flows is a signed, single-purpose, short-lived `state` JWT — no server-side session store, keeping the whole flow stateless.
+
+**Schema change:** new `installations` table (migration `d5e76033c384`) — `provider`, `external_id`, `account_login`, `account_type` (user/organization, future-org-support per the stated requirement), `status` (active/revoked). `repositories.installation_id` is a required FK (every connected repository has exactly one owning installation) — `tests/services/conftest.py`'s `snapshot` fixture updated accordingly (now creates an owning `Installation` first).
+
+**Error handling:** each GitHub-specific failure (missing installation, revoked installation, expired/invalid `state`, insufficient permissions, rate limiting, upstream GitHub errors) is a dedicated exception class (`integrations/github/exceptions.py`), mapped to a stable HTTP status via `api/errors.py`'s registered handlers — deliberately not a bare `except LookupError` for "not found" cases, since that's a superclass of unrelated `KeyError`/`IndexError` bugs elsewhere in the app; `InstallationNotFound`/`RepositoryNotFound` are dedicated types instead.
+
+**Two things verified live, not just offline, before calling this done:**
+
+1. Full suite: **129 passed, 0 skipped**, ruff and mypy --strict both clean.
+2. The new migration's `upgrade`/`downgrade`/re-`upgrade` cycle, run against a real, disposable `pgserver`-backed Postgres (a fresh temp data directory, not the shared one `tests/conftest.py` reuses across runs — reusing that one initially produced a false failure, `DuplicateTable: relation "users" already exists`, because that fixture seeds its schema via `create_all()` rather than Alembic, so the two approaches collided when pointed at the same on-disk cluster). Confirmed `installations` and `repositories.installation_id` appear after upgrade and are fully absent after downgrade to the prior revision.
+
+**Known gaps, flagged not silent (ADR-024):** installation revocation is detected lazily (next API call needing that installation), not via webhook — no webhook receiver exists yet, unchanged from the v1.1 deferral already named in `ARCHITECTURE.md` §14. Tenant isolation is application-layer `user_id`/`installation_id` filtering, not Postgres RLS (`PRD.md` §90) — an explicitly deferred hardening pass, tracked for its own dedicated PR rather than bundled here.
+
+**Status:** Phase 0, PR1–PR7 and PR3 complete and committed. PR8 (bare Architecture View, frontend) is the only remaining Phase 0 deliverable.
+
+**Next:** PR8 (bare Architecture View, frontend, `ARCHITECTURE.md` §15) is now unblocked — it depends on PR3 existing (there was no way to connect a repository to view before now) and has no other external dependency. Do not begin Phase 1 work ahead of it.

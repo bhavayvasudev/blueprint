@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from integrations.github.exceptions import GitHubAppNotInstalled
 from integrations.repository.base import CloneCredentials, InstallationMetadata, RepositoryMetadata
+from models.installation import Installation
 from models.repository import User
 from models.types import AccountType, InstallationStatus
 from services import repository_connection_service as service_module
@@ -56,7 +57,7 @@ class FakeRepositoryProvider:
 
 
 @pytest.fixture
-def installation(db_session: Session, user: User):  # type: ignore[no-untyped-def]
+def installation(db_session: Session, user: User) -> Installation:
     metadata = InstallationMetadata(
         external_id="1001", account_login="acme-corp", account_type=AccountType.ORGANIZATION
     )
@@ -68,7 +69,7 @@ def _patch_provider(monkeypatch: pytest.MonkeyPatch, provider: FakeRepositoryPro
 
 
 def test_list_available_repositories_delegates_to_provider(
-    db_session: Session, user: User, installation, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repos = [
         RepositoryMetadata(
@@ -83,7 +84,7 @@ def test_list_available_repositories_delegates_to_provider(
 
 
 def test_list_available_repositories_marks_installation_revoked_on_not_installed(
-    db_session: Session, user: User, installation, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _patch_provider(monkeypatch, FakeRepositoryProvider([], raise_not_installed=True))
 
@@ -94,7 +95,7 @@ def test_list_available_repositories_marks_installation_revoked_on_not_installed
 
 
 def test_connect_repository_persists_a_new_row(
-    db_session: Session, user: User, installation, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repos = [
         RepositoryMetadata(
@@ -113,7 +114,7 @@ def test_connect_repository_persists_a_new_row(
 
 
 def test_connect_repository_rejects_duplicate_connection(
-    db_session: Session, user: User, installation, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repos = [
         RepositoryMetadata(
@@ -131,7 +132,7 @@ def test_connect_repository_rejects_duplicate_connection(
 
 
 def test_list_and_get_connected_repositories_are_scoped_to_the_user(
-    db_session: Session, user: User, installation, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repos = [
         RepositoryMetadata(
@@ -149,7 +150,7 @@ def test_list_and_get_connected_repositories_are_scoped_to_the_user(
 
 
 def test_get_connected_repository_raises_not_found_for_a_different_user(
-    db_session: Session, user: User, installation, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repos = [
         RepositoryMetadata(

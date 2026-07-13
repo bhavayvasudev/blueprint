@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import httpx
 import pytest
 
@@ -8,9 +10,11 @@ from integrations.repository.base import RepositoryProvider
 from integrations.repository.github_provider import GitHubRepositoryProvider
 from models.types import AccountType
 
+_Handler = Callable[[httpx.Request], httpx.Response]
+
 
 def _provider(
-    test_private_key_pem: str, handler: object, *, token_handler: object | None = None
+    test_private_key_pem: str, handler: _Handler, *, token_handler: _Handler | None = None
 ) -> GitHubRepositoryProvider:
     config = GitHubAppConfig(
         app_id="123",
@@ -22,9 +26,7 @@ def _provider(
     token_cache = InstallationTokenCache(
         config, transport=httpx.MockTransport(token_handler or _default_token_handler)
     )
-    return GitHubRepositoryProvider(
-        config, token_cache, transport=httpx.MockTransport(handler)  # type: ignore[arg-type]
-    )
+    return GitHubRepositoryProvider(config, token_cache, transport=httpx.MockTransport(handler))
 
 
 def _default_token_handler(request: httpx.Request) -> httpx.Response:

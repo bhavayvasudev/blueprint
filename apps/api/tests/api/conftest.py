@@ -23,7 +23,7 @@ def test_settings() -> Settings:
         github_app_slug="blueprint-dev",
         frontend_url="https://app.example.com",
         api_base_url="https://api.example.com",
-    )  # type: ignore[call-arg]
+    )
 
 
 @pytest.fixture

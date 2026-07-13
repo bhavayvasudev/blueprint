@@ -22,7 +22,7 @@ def _metadata(**overrides: object) -> InstallationMetadata:
         "account_type": AccountType.ORGANIZATION,
     }
     base.update(overrides)
-    return InstallationMetadata(**base)  # type: ignore[arg-type]
+    return InstallationMetadata(**base)
 
 
 def test_upsert_installation_creates_new_row(db_session: Session, user: User) -> None:
