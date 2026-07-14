@@ -11,9 +11,13 @@ import type { ModuleFacts } from "@/lib/insights";
  * holds the center, and every other module sits on a ring at its real
  * graph distance from it, so the picture is the architecture (distance
  * from center = distance from the load-bearing wall), stable across
- * every visit, and never jitters for spectacle. Selecting a module
- * opens what the architect knows about it; the module index below the
- * canvas is the same information as text (RULES.md §16). */
+ * every visit, and never jitters for spectacle.
+ *
+ * The constellation is an instrument, not an illustration: resting a
+ * pointer on any module illuminates its import strands and runs
+ * current along them; selecting it opens what the architect knows.
+ * The module index below the canvas is the same information as text
+ * (RULES.md §16). */
 
 const VIEW_W = 880;
 const VIEW_H = 600;
@@ -117,10 +121,14 @@ export function AtlasGraph({
   const validFocus =
     initialFocusId && placed.has(initialFocusId) ? initialFocusId : (keystoneId ?? modules[0]?.id ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(validFocus);
+  // The module under the pointer illuminates its strands without
+  // committing the selection — the graph answers before it's asked.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Keyboard-focus ring, drawn in SVG — a CSS outline on a <circle>
   // traces the bounding box, which reads as a broken rectangle.
   const [focusVisibleId, setFocusVisibleId] = useState<string | null>(null);
   const selected = selectedId ? (placed.get(selectedId) ?? null) : null;
+  const activeId = hoveredId ?? selectedId;
 
   const edges = useMemo(() => {
     const list: { key: string; from: PlacedNode; to: PlacedNode }[] = [];
@@ -135,21 +143,44 @@ export function AtlasGraph({
     return list;
   }, [modules, placed]);
 
+  // Everything one strand away from the active module — those nodes
+  // brighten with the edges so the neighborhood reads as one gesture.
+  const activeNeighbors = useMemo(() => {
+    const set = new Set<string>();
+    if (!activeId) return set;
+    for (const { from, to } of edges) {
+      if (from.id === activeId) set.add(to.id);
+      if (to.id === activeId) set.add(from.id);
+    }
+    return set;
+  }, [edges, activeId]);
+
   if (modules.length === 0) return null;
 
   return (
     <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
-      <div className="glass edge-light overflow-hidden rounded-3xl">
+      <div className="glass edge-light relative overflow-hidden rounded-[2rem]">
+        {/* The viewport's own depth: a faint pool of light under the
+            keystone so the center of gravity reads before any label. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 55% 60% at 50% 50%, rgb(46 107 255 / 0.05) 0%, transparent 70%)",
+          }}
+        />
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-          className="block h-auto w-full"
+          className="relative block h-auto w-full"
           role="group"
           aria-label={`Module constellation: ${modules.length} modules. Select a module to read what the architect knows about it.`}
+          onMouseLeave={() => setHoveredId(null)}
         >
           <defs>
             <radialGradient id="atlas-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="var(--color-aurora-violet)" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="var(--color-aurora-violet)" stopOpacity="0" />
+              <stop offset="0%" stopColor="var(--color-accent-500)" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="var(--color-accent-500)" stopOpacity="0" />
             </radialGradient>
           </defs>
 
@@ -173,19 +204,28 @@ export function AtlasGraph({
               );
             })}
 
+          {/* The keystone's halo breathes — the one place the stage is
+              allowed a pulse, because it marks the system's center of
+              gravity, not a decoration. */}
           {keystoneId && placed.get(keystoneId) ? (
-            <circle
+            <motion.circle
               cx={placed.get(keystoneId)!.x}
               cy={placed.get(keystoneId)!.y}
               r={placed.get(keystoneId)!.r * 3.1}
               fill="url(#atlas-halo)"
+              style={{
+                transformOrigin: `${placed.get(keystoneId)!.x}px ${placed.get(keystoneId)!.y}px`,
+              }}
+              animate={reduceMotion ? undefined : { scale: [1, 1.12, 1], opacity: [0.8, 1, 0.8] }}
+              transition={{ repeat: Infinity, duration: 7, ease: "easeInOut" }}
             />
           ) : null}
 
-          {/* Import edges. Direction reads from the arrowhead; selection lights the touched strands. */}
+          {/* Import edges. Direction reads from the arrowhead; the
+              active module's strands illuminate and carry current. */}
           {edges.map(({ key, from, to }) => {
-            const touches = selectedId !== null && (from.id === selectedId || to.id === selectedId);
-            const dimmed = selectedId !== null && !touches;
+            const touches = activeId !== null && (from.id === activeId || to.id === activeId);
+            const dimmed = activeId !== null && !touches;
             return (
               <g key={key}>
                 <motion.path
@@ -198,9 +238,23 @@ export function AtlasGraph({
                       : "stroke-ink-950/20 dark:stroke-white/20"
                   }
                   initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
-                  animate={{ pathLength: 1, opacity: dimmed ? 0.25 : 1 }}
+                  animate={{ pathLength: 1, opacity: dimmed ? 0.22 : 1 }}
                   transition={{ duration: reduceMotion ? 0 : 0.7, ease: [0.22, 1, 0.36, 1] }}
                 />
+                {/* Current along the lit strand — dependency as flow,
+                    not just line. Skipped under reduced motion (the
+                    solid accent stroke already carries the state). */}
+                {touches && !reduceMotion ? (
+                  <path
+                    d={edgePath(from, to)}
+                    fill="none"
+                    strokeWidth={2.4}
+                    strokeLinecap="round"
+                    strokeDasharray="6 26"
+                    className="graph-edge-flow stroke-accent-400"
+                    opacity={0.9}
+                  />
+                ) : null}
                 {/* Arrowhead at the target rim, oriented along the final segment. */}
                 <ArrowHead from={from} to={to} active={touches} dimmed={dimmed} />
               </g>
@@ -211,6 +265,8 @@ export function AtlasGraph({
           {[...placed.values()].map((node, index) => {
             const isSelected = node.id === selectedId;
             const isKeystone = node.id === keystoneId;
+            const isNeighbor = activeNeighbors.has(node.id);
+            const isDimmed = activeId !== null && node.id !== activeId && !isNeighbor;
             return (
               <motion.g
                 key={node.id}
@@ -223,7 +279,7 @@ export function AtlasGraph({
                 }}
                 style={{ transformOrigin: `${node.x}px ${node.y}px` }}
               >
-                <circle
+                <motion.circle
                   cx={node.x}
                   cy={node.y}
                   r={node.r}
@@ -238,18 +294,29 @@ export function AtlasGraph({
                       setSelectedId(node.id);
                     }
                   }}
+                  onMouseEnter={() => setHoveredId(node.id)}
+                  onMouseLeave={() => setHoveredId((id) => (id === node.id ? null : id))}
                   onFocus={(event) => {
                     if (event.currentTarget.matches(":focus-visible")) {
                       setFocusVisibleId(node.id);
                     }
+                    setHoveredId(node.id);
                   }}
-                  onBlur={() => setFocusVisibleId((id) => (id === node.id ? null : id))}
-                  className={`cursor-pointer outline-none transition-[stroke,filter] duration-200 ${
-                    isSelected
-                      ? "fill-white stroke-accent-500 drop-shadow-[0_0_14px_rgb(106_110_242/0.45)] dark:fill-ink-800"
-                      : "fill-white/90 stroke-ink-950/15 hover:stroke-ink-950/40 dark:fill-ink-800/90 dark:stroke-white/15 dark:hover:stroke-white/40"
-                  }`}
-                  strokeWidth={isSelected ? 2 : 1.25}
+                  onBlur={() => {
+                    setFocusVisibleId((id) => (id === node.id ? null : id));
+                    setHoveredId((id) => (id === node.id ? null : id));
+                  }}
+                  whileHover={reduceMotion ? undefined : { scale: 1.08 }}
+                  transition={{ type: "spring", stiffness: 340, damping: 22 }}
+                  style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                  className={`cursor-pointer outline-none transition-[stroke,filter,opacity] duration-200 ${
+                    isSelected || node.id === hoveredId
+                      ? "fill-white stroke-accent-500 drop-shadow-[0_0_14px_rgb(46_107_255/0.45)] dark:fill-ink-800"
+                      : isNeighbor
+                        ? "fill-white/95 stroke-accent-400/70 dark:fill-ink-800/95"
+                        : "fill-white/90 stroke-ink-950/15 hover:stroke-ink-950/40 dark:fill-ink-800/90 dark:stroke-white/15 dark:hover:stroke-white/40"
+                  } ${isDimmed ? "opacity-45" : ""}`}
+                  strokeWidth={isSelected || node.id === hoveredId ? 2 : 1.25}
                 />
                 {focusVisibleId === node.id ? (
                   <circle
@@ -276,11 +343,13 @@ export function AtlasGraph({
                   x={node.x}
                   y={node.y + node.r + 16}
                   textAnchor="middle"
-                  className={`pointer-events-none font-mono text-[11px] ${
-                    isSelected
+                  className={`pointer-events-none font-mono text-[11px] transition-opacity duration-200 ${
+                    isSelected || node.id === hoveredId
                       ? "fill-ink-950 font-semibold dark:fill-ink-50"
-                      : "fill-ink-600 dark:fill-ink-300"
-                  }`}
+                      : isNeighbor
+                        ? "fill-ink-800 dark:fill-ink-100"
+                        : "fill-ink-600 dark:fill-ink-300"
+                  } ${isDimmed ? "opacity-50" : ""}`}
                   stroke="var(--background)"
                   strokeWidth={3.5}
                   style={{ paintOrder: "stroke" }}
@@ -305,7 +374,7 @@ export function AtlasGraph({
       {selected ? (
         <aside
           aria-live="polite"
-          className="glass-strong edge-light flex flex-col gap-5 rounded-3xl p-6 xl:sticky xl:top-24"
+          className="glass-strong edge-light flex flex-col gap-5 rounded-[2rem] p-6 xl:sticky xl:top-24"
         >
           <div className="flex items-start justify-between gap-3">
             <h3 className="min-w-0 font-mono text-lg font-semibold text-ink-950 dark:text-ink-50">
@@ -371,7 +440,7 @@ function ArrowHead({
       className={
         active ? "fill-accent-500" : "fill-ink-950/25 dark:fill-white/25"
       }
-      opacity={dimmed ? 0.25 : 1}
+      opacity={dimmed ? 0.22 : 1}
     />
   );
 }

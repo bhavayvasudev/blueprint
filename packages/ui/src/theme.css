@@ -13,34 +13,44 @@
    losing the ability to nudge an icon by 4px. */
 
 @theme {
-  /* Accent: one color, used for interactive/emphasis states only — never
-     decoratively, never as a second "brand" color alongside it. */
-  --color-accent-50: #eef0ff;
-  --color-accent-200: #c7ccfd;
-  --color-accent-400: #8a8ef9;
-  --color-accent-500: #6a6ef2;
-  --color-accent-600: #5457e0;
-  --color-accent-700: #4143b8;
+  /* Accent: one color — electric blue — and only one. It marks
+     repository state, active navigation, the knowledge graph, and
+     primary actions; it never decorates. There is no second hue
+     anywhere in the system (the old aurora violet/magenta family is
+     gone on purpose — 95% of the surface is monochrome). */
+  --color-accent-50: #eef4ff;
+  --color-accent-200: #c3d6ff;
+  --color-accent-400: #5f8bff;
+  --color-accent-500: #2e6bff;
+  --color-accent-600: #1c53e8;
+  --color-accent-700: #1740b3;
 
-  /* Neutral scale: near-monochrome base, the "reads like a document, not
-     a dashboard" foundation (RULES.md §18, PRD.md §8). */
-  --color-ink-950: #0a0a0d;
-  --color-ink-900: #131318;
-  --color-ink-800: #1c1c24;
-  --color-ink-700: #2a2a34;
-  --color-ink-600: #44444f;
-  --color-ink-500: #6b6b78;
-  --color-ink-400: #9494a0;
-  --color-ink-300: #c1c1c9;
-  --color-ink-200: #e0e0e5;
-  --color-ink-100: #eeeef1;
-  --color-ink-50: #f7f7f9;
+  /* Neutral scale: a warm monochrome axis — warm white light end, warm
+     near-black dark end — so the electric accent reads as a temperature
+     contrast, not just a hue. Chroma stays near zero throughout; this
+     is paper-and-graphite, never cream. */
+  --color-ink-950: #0b0a09;
+  --color-ink-900: #141312;
+  --color-ink-800: #1d1c1a;
+  --color-ink-700: #2b2a27;
+  --color-ink-600: #454440;
+  --color-ink-500: #6c6a65;
+  --color-ink-400: #959389;
+  --color-ink-300: #c3c1bc;
+  --color-ink-200: #e2e0dc;
+  --color-ink-100: #efedea;
+  --color-ink-50: #f9f8f6;
 
   /* Status colors: always paired with an icon/label in components, never
-     the sole signal (RULES.md §16). */
+     the sole signal (RULES.md §16). The base values read on dark
+     surfaces; the -deep variants are the same hues darkened to hold
+     ≥4.5:1 as text on the light theme's warm white. */
   --color-status-ready: #2fb379;
+  --color-status-ready-deep: #17734a;
   --color-status-indexing: #d9a441;
+  --color-status-indexing-deep: #85610f;
   --color-status-failed: #e0555f;
+  --color-status-failed-deep: #bc2c37;
 
   --font-sans: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
   --font-mono: var(--font-geist-mono, ui-monospace, monospace);
@@ -63,25 +73,21 @@
   --text-2xl--line-height: 2rem;
   --text-3xl: 1.875rem;
   --text-3xl--line-height: 2.25rem;
-  /* Display sizes for the workspace hero — still tokens, never reached
-     for as arbitrary values. */
+  /* Display sizes — the editorial voice of the workspace (the thesis,
+     the landing statement). Still tokens, never arbitrary values. */
   --text-4xl: 2.5rem;
-  --text-4xl--line-height: 2.75rem;
+  --text-4xl--line-height: 2.85rem;
   --text-5xl: 3.25rem;
-  --text-5xl--line-height: 3.5rem;
+  --text-5xl--line-height: 3.6rem;
   --text-6xl: 4rem;
-  --text-6xl--line-height: 4.25rem;
+  --text-6xl--line-height: 4.3rem;
+  --text-7xl: 5.25rem;
+  --text-7xl--line-height: 5.4rem;
 
-  /* Aurora hues: the ambient-light family behind the workspace (far
-     background gradients, the hero gradient, graph glow). Decorative
-     lighting only — interactive states stay on the accent scale. */
-  --color-aurora-blue: #4f7cff;
-  --color-aurora-violet: #8b5cf6;
-  --color-aurora-magenta: #c352e8;
-  --color-aurora-cyan: #38bdf8;
-
-  /* Depth shadows for floating panels (the workspace's z-layers). */
-  --shadow-float: 0 1px 2px rgb(10 10 13 / 0.04), 0 8px 24px -8px rgb(10 10 13 / 0.12);
-  --shadow-float-lg: 0 2px 4px rgb(10 10 13 / 0.06), 0 24px 64px -16px rgb(10 10 13 / 0.25);
-  --shadow-float-dark: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 48px -12px rgb(0 0 0 / 0.6);
+  /* Depth shadows for floating panels (the workspace's z-layers) —
+     a near shadow that seats the object and a far, wide one that
+     suspends it above the stage. */
+  --shadow-float: 0 1px 2px rgb(11 10 9 / 0.05), 0 12px 32px -12px rgb(11 10 9 / 0.16);
+  --shadow-float-lg: 0 2px 6px rgb(11 10 9 / 0.06), 0 32px 80px -24px rgb(11 10 9 / 0.3);
+  --shadow-float-dark: 0 1px 2px rgb(0 0 0 / 0.5), 0 28px 72px -18px rgb(0 0 0 / 0.72);
 }

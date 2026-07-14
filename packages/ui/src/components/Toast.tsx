@@ -18,8 +18,8 @@ export type ToastTone = "neutral" | "ready" | "failed" | "accent";
 
 const TONE_ICON_CLASSES: Record<ToastTone, string> = {
   neutral: "text-ink-500 dark:text-ink-400",
-  ready: "text-status-ready",
-  failed: "text-status-failed",
+  ready: "text-status-ready-deep dark:text-status-ready",
+  failed: "text-status-failed-deep dark:text-status-failed",
   accent: "text-accent-600 dark:text-accent-400",
 };
 

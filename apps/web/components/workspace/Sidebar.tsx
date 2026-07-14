@@ -62,7 +62,11 @@ export function Sidebar({
                     className="absolute inset-0 rounded-xl bg-ink-950/6 shadow-sm ring-1 ring-ink-950/8 dark:bg-white/8 dark:ring-white/10"
                   />
                 ) : null}
-                <Icon className="relative size-4.5 shrink-0" />
+                <Icon
+                  className={`relative size-4.5 shrink-0 ${
+                    isActive ? "text-accent-600 dark:text-accent-400" : ""
+                  }`}
+                />
                 <span className="relative">{item.label}</span>
                 {href === null ? (
                   <span
@@ -134,7 +138,7 @@ export function Sidebar({
           type="button"
           className="flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-ink-950/4 dark:hover:bg-white/5"
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-aurora-blue to-aurora-violet text-xs font-semibold text-white">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-semibold text-ink-50 ring-1 ring-white/10 dark:bg-ink-100 dark:text-ink-950 dark:ring-ink-950/10">
             {initials(user.name)}
           </span>
           <span className="flex min-w-0 flex-col">

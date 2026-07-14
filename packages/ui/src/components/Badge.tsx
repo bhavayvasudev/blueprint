@@ -4,9 +4,9 @@ export type BadgeTone = "neutral" | "ready" | "indexing" | "failed" | "accent";
 
 const TONE_STYLES: Record<BadgeTone, string> = {
   neutral: "bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-200",
-  ready: "bg-status-ready/10 text-status-ready",
-  indexing: "bg-status-indexing/10 text-status-indexing",
-  failed: "bg-status-failed/10 text-status-failed",
+  ready: "bg-status-ready/10 text-status-ready-deep dark:text-status-ready",
+  indexing: "bg-status-indexing/10 text-status-indexing-deep dark:text-status-indexing",
+  failed: "bg-status-failed/10 text-status-failed-deep dark:text-status-failed",
   accent: "bg-accent-50 text-accent-700 dark:bg-accent-700/20 dark:text-accent-400",
 };
 

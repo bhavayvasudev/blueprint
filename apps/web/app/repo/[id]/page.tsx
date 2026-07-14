@@ -76,7 +76,7 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
           {reading ? (
             <Reveal delay={0.1} distance={28}>
               <h1
-                className="max-w-3xl text-3xl font-semibold leading-snug tracking-tight text-ink-950 sm:text-4xl dark:text-ink-50"
+                className="max-w-3xl text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
                 style={{ textWrap: "balance" }}
               >
                 <ProseSegments segments={reading.thesis} repositoryId={repository.id} />
@@ -138,7 +138,7 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
         ) : (
           <div className="flex max-w-xl flex-col gap-4">
             <h1
-              className="text-3xl font-semibold leading-snug tracking-tight text-ink-950 sm:text-4xl dark:text-ink-50"
+              className="text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
               style={{ textWrap: "balance" }}
             >
               {latestSnapshot

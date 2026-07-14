@@ -32,7 +32,7 @@ function FieldShell({ id, label, hint, error, required, hintId, errorId, childre
       </label>
       {children}
       {error ? (
-        <p role="alert" id={errorId} className="text-xs text-status-failed">
+        <p role="alert" id={errorId} className="text-xs text-status-failed-deep dark:text-status-failed">
           {error}
         </p>
       ) : (

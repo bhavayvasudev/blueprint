@@ -85,7 +85,7 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
                   {latest && latest.id !== currentReady.id ? (
                     <>
                       <span aria-hidden>·</span>
-                      <span className="text-status-indexing">
+                      <span className="text-status-indexing-deep dark:text-status-indexing">
                         {latest.status === "indexing"
                           ? "a fresh study is underway"
                           : "the newest study attempt failed — this is the last good read"}
@@ -99,7 +99,7 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
                   sentence. Module names inside it are handles into the Atlas. */}
               <Reveal delay={0.1} distance={28}>
                 <h1
-                  className="max-w-3xl text-3xl font-semibold leading-snug tracking-tight text-ink-950 sm:text-4xl dark:text-ink-50"
+                  className="max-w-3xl text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
                   style={{ textWrap: "balance" }}
                 >
                   <ProseSegments segments={reading.thesis} repositoryId={repository.id} />
@@ -187,7 +187,7 @@ function PreStudyBriefing({
         </Reveal>
         <Reveal delay={0.1} distance={28}>
           <h1
-            className="max-w-3xl text-3xl font-semibold leading-snug tracking-tight text-ink-950 sm:text-4xl dark:text-ink-50"
+            className="max-w-3xl text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
             style={{ textWrap: "balance" }}
           >
             Nothing to study yet.
@@ -232,7 +232,7 @@ function PreStudyBriefing({
       </Reveal>
       <Reveal delay={0.1} distance={28}>
         <h1
-          className="max-w-3xl text-3xl font-semibold leading-snug tracking-tight text-ink-950 sm:text-4xl dark:text-ink-50"
+          className="max-w-3xl text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
           style={{ textWrap: "balance" }}
         >
           {headline}

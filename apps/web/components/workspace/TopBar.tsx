@@ -36,7 +36,7 @@ export function TopBar({ user }: { user: User }) {
         transition={{ type: "spring", stiffness: 400, damping: 22 }}
         className="glass edge-light flex items-center gap-1.5 rounded-full p-1 pr-2 text-ink-600 dark:text-ink-300"
       >
-        <span className="flex size-7 items-center justify-center rounded-full bg-gradient-to-br from-aurora-blue to-aurora-violet text-xs font-semibold text-white">
+        <span className="flex size-7 items-center justify-center rounded-full bg-ink-900 text-xs font-semibold text-ink-50 ring-1 ring-white/10 dark:bg-ink-100 dark:text-ink-950 dark:ring-ink-950/10">
           {initials(user.name)}
         </span>
         <IconChevronDown className="size-3.5" />
