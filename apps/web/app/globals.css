@@ -24,10 +24,8 @@
   --glass-highlight: rgb(255 255 255 / 0.95);
   --glass-shadow: var(--shadow-float);
   --glass-shadow-lg: var(--shadow-float-lg);
-  /* The stage's single light source (electric blue) + drafting grid. */
-  --glow-opacity: 0.2;
-  --grid-line: rgb(11 10 9 / 0.045);
-  --cursor-light: rgb(46 107 255 / 0.06);
+  /* The stage's single, soft light source (electric blue). */
+  --glow-opacity: 0.14;
 }
 
 .dark {
@@ -40,13 +38,18 @@
   --glass-highlight: rgb(255 255 255 / 0.14);
   --glass-shadow: var(--shadow-float-dark);
   --glass-shadow-lg: var(--shadow-float-dark);
-  --glow-opacity: 0.32;
-  --grid-line: rgb(255 255 255 / 0.035);
-  --cursor-light: rgb(95 139 255 / 0.05);
+  --glow-opacity: 0.22;
 }
 
 html {
   color-scheme: light;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 html.dark {
@@ -104,18 +107,6 @@ body {
   pointer-events: none;
 }
 
-/* The drafting grid — Blueprint's own material. A near-invisible
-   engineer's lattice on the far background, faded out radially so it
-   reads as ambient architecture, never as wallpaper. */
-.grid-drafting {
-  background-image:
-    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 30%, transparent 78%);
-  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 30%, transparent 78%);
-}
-
 } /* @layer components */
 
 /* ---------------------------------------------------------------------
@@ -134,19 +125,9 @@ body {
   }
 }
 
-@keyframes pulse-line {
-  0%,
-  100% {
-    stroke-opacity: 0.1;
-  }
-  50% {
-    stroke-opacity: 0.4;
-  }
-}
-
-/* Current flowing along an illuminated graph edge — the "the system is
-   thinking about this dependency" signal. Dash period matches the
-   6 + 10 dasharray on the overlay strand. */
+/* Current flowing along an illuminated graph edge in the Atlas — the
+   "the system is thinking about this dependency" signal. Dash period
+   matches the 6 + 10 dasharray on the overlay strand. */
 @keyframes edge-flow {
   from {
     stroke-dashoffset: 32;
@@ -161,17 +142,12 @@ body {
   will-change: transform;
 }
 
-.graph-edge-pulse {
-  animation: pulse-line 4.5s ease-in-out infinite;
-}
-
 .graph-edge-flow {
   animation: edge-flow 1.1s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .glow-blob,
-  .graph-edge-pulse,
   .graph-edge-flow {
     animation: none;
   }

@@ -16,6 +16,7 @@ export * from "./components/Motion";
 export * from "./components/Reveal";
 export * from "./components/Tilt";
 export * from "./components/PlaceholderPanel";
+export * from "./components/Popover";
 export * from "./components/ProportionBar";
 export * from "./components/SectionHeading";
 export * from "./components/Skeleton";

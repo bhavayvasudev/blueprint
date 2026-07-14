@@ -5,16 +5,21 @@ import Link from "next/link";
 import { Magnetic } from "@blueprint/ui";
 import { WORKSPACE_NAV } from "./nav";
 
-/** The floating dock — mission control's bottom rail. The active room
- * carries a shared-layout accent pill that glides between items;
- * every icon is magnetic. Rooms from later phases sit in the dock
- * (dimmed) so the workspace shows its whole shape. */
+/** The floating dock — mission control's bottom rail, and now the
+ * workspace's only room-to-room navigation surface (the top pill holds
+ * context and utilities, not room links). The active room carries a
+ * shared-layout accent pill that glides between items; every icon is
+ * magnetic. Rooms from later phases sit in the dock (dimmed) so the
+ * workspace shows its whole shape. Search is the one entry that opens
+ * the palette instead of routing anywhere. */
 export function Dock({
   activeNav,
   activeRepoId,
+  onOpenSearch,
 }: {
   activeNav: string;
   activeRepoId: string | null;
+  onOpenSearch: () => void;
 }) {
   return (
     <motion.nav
@@ -25,7 +30,7 @@ export function Dock({
       aria-label="Workspace navigation"
     >
       {WORKSPACE_NAV.map((item) => {
-        const href = item.href(activeRepoId);
+        const href = item.action ? null : item.href(activeRepoId);
         const isActive = item.key === activeNav;
         const Icon = item.icon;
         const inner = (
@@ -44,10 +49,26 @@ export function Dock({
         const itemClass = `relative flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
           isActive
             ? "text-white"
-            : href
+            : href || item.action
               ? "text-ink-600 hover:text-ink-950 dark:text-ink-300 dark:hover:text-ink-50"
               : "cursor-default text-ink-400 dark:text-ink-600"
         }`;
+
+        if (item.action) {
+          return (
+            <Magnetic key={item.key} strength={0.2}>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.94 }}
+                onClick={onOpenSearch}
+                className={itemClass}
+              >
+                {inner}
+              </motion.button>
+            </Magnetic>
+          );
+        }
+
         return (
           <Magnetic key={item.key} strength={0.2}>
             {href ? (

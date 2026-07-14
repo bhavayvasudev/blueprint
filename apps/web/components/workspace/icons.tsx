@@ -197,6 +197,60 @@ export function IconSpark({ className }: IconProps) {
   );
 }
 
+export function IconInsights({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M4 20V10.5M11.5 20V4M19 20v-6.5" />
+      <path d="M2.5 20h19" />
+    </svg>
+  );
+}
+
+export function IconAppearance({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconSearch({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m19.5 19.5-4.3-4.3" />
+    </svg>
+  );
+}
+
+export function IconSettings({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3.5v2.3M12 18.2v2.3M20.5 12h-2.3M5.8 12H3.5M17.8 6.2l-1.6 1.6M7.8 16.2l-1.6 1.6M17.8 17.8l-1.6-1.6M7.8 7.8 6.2 6.2" />
+    </svg>
+  );
+}
+
+export function IconUser({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="12" cy="8.2" r="3.4" />
+      <path d="M4.8 20c1.2-3.6 4-5.5 7.2-5.5s6 1.9 7.2 5.5" />
+    </svg>
+  );
+}
+
+export function IconLogout({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M9 4.5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3" />
+      <path d="M20 12H10.5M20 12l-3.5-3.5M20 12l-3.5 3.5" />
+    </svg>
+  );
+}
+
 export function IconCommand({ className }: IconProps) {
   return (
     <svg {...base(className)}>

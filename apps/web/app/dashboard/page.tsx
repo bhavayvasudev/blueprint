@@ -8,6 +8,9 @@ import { MethodRows } from "@/components/study/MethodRows";
 import { ProseSegments } from "@/components/study/Prose";
 import { SectionRule } from "@/components/study/SectionRule";
 import { SyncTrigger } from "@/components/SyncTrigger";
+import { AIBriefingCard } from "@/components/workspace/AIBriefingCard";
+import { GraphPreviewCard } from "@/components/workspace/GraphPreviewCard";
+import { RepositoryOverviewCard } from "@/components/workspace/RepositoryOverviewCard";
 import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
   getArchitectureGraph,
@@ -56,6 +59,12 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
       ])
     : [null, null];
   const reading = graph ? analyzeGraph(graph, previousGraph) : null;
+  const firstName = user.name.split(" ")[0];
+  const confidencePercent =
+    graph && graph.file_count > 0
+      ? Math.round((graph.tree_sitter_status.full_confidence_files / graph.file_count) * 100)
+      : null;
+  const thesisExcerpt = reading ? reading.thesis.map((segment) => segment.text).join("") : "";
 
   return (
     <WorkspaceShell
@@ -65,10 +74,15 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
       activeRepoId={repository?.id ?? null}
     >
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-16 px-6 pb-10 pt-28 xl:px-8 xl:pt-24">
-        {repository && reading && currentReady ? (
+        {repository && graph && reading && currentReady ? (
           <>
             {/* Who is being briefed, on what, from when — the quiet context line. */}
             <header className="flex flex-col gap-6">
+              <Reveal distance={10}>
+                <p className="text-sm text-ink-500 dark:text-ink-400">
+                  Hi, <span className="font-medium text-ink-950 dark:text-ink-50">{firstName}</span> 👋
+                </p>
+              </Reveal>
               <Reveal distance={14}>
                 <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-sm text-ink-500 dark:text-ink-400">
                   <span className="font-medium text-ink-950 dark:text-ink-50">The Briefing</span>
@@ -107,12 +121,30 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
               </Reveal>
             </header>
 
-            <Reveal delay={0.22} distance={18} className="flex flex-col gap-9">
-              <SectionRule>The read</SectionRule>
-              {reading.claims.map((claim) => (
-                <ClaimBlock key={claim.id} claim={claim} repositoryId={repository.id} />
-              ))}
+            <Reveal delay={0.18} distance={20} className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <GraphPreviewCard
+                modules={reading.modules}
+                keystoneId={reading.keystoneId}
+                repositoryId={repository.id}
+              />
+              <RepositoryOverviewCard
+                repository={repository}
+                fileCount={graph.file_count}
+                moduleCount={reading.modules.length}
+                importCount={graph.repository_graph_edges.length}
+                confidencePercent={confidencePercent}
+              />
+              <AIBriefingCard excerpt={thesisExcerpt} hasMore={reading.claims.length > 0} />
             </Reveal>
+
+            <div id="the-read" className="scroll-mt-28">
+              <Reveal delay={0.26} distance={18} className="flex flex-col gap-9">
+                <SectionRule>The read</SectionRule>
+                {reading.claims.map((claim) => (
+                  <ClaimBlock key={claim.id} claim={claim} repositoryId={repository.id} />
+                ))}
+              </Reveal>
+            </div>
 
             {reading.deltas ? (
               <Reveal delay={0.05} distance={18} className="flex flex-col gap-9">
