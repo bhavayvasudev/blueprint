@@ -63,4 +63,25 @@
   --text-2xl--line-height: 2rem;
   --text-3xl: 1.875rem;
   --text-3xl--line-height: 2.25rem;
+  /* Display sizes for the workspace hero — still tokens, never reached
+     for as arbitrary values. */
+  --text-4xl: 2.5rem;
+  --text-4xl--line-height: 2.75rem;
+  --text-5xl: 3.25rem;
+  --text-5xl--line-height: 3.5rem;
+  --text-6xl: 4rem;
+  --text-6xl--line-height: 4.25rem;
+
+  /* Aurora hues: the ambient-light family behind the workspace (far
+     background gradients, the hero gradient, graph glow). Decorative
+     lighting only — interactive states stay on the accent scale. */
+  --color-aurora-blue: #4f7cff;
+  --color-aurora-violet: #8b5cf6;
+  --color-aurora-magenta: #c352e8;
+  --color-aurora-cyan: #38bdf8;
+
+  /* Depth shadows for floating panels (the workspace's z-layers). */
+  --shadow-float: 0 1px 2px rgb(10 10 13 / 0.04), 0 8px 24px -8px rgb(10 10 13 / 0.12);
+  --shadow-float-lg: 0 2px 4px rgb(10 10 13 / 0.06), 0 24px 64px -16px rgb(10 10 13 / 0.25);
+  --shadow-float-dark: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 48px -12px rgb(0 0 0 / 0.6);
 }

@@ -4,6 +4,11 @@
 @import "../../../packages/ui/src/theme.css";
 @source "../../../packages/ui/src";
 
+/* Theme is user-controlled (toggle in the workspace chrome), so `dark:`
+   follows the `.dark` class set on <html> by the theme init script /
+   ThemeProvider — not the OS media query alone. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -12,17 +17,164 @@
 :root {
   --background: var(--color-ink-50);
   --foreground: var(--color-ink-950);
+  /* Glass material, light: white panels floating over a bright stage. */
+  --glass-surface: rgb(255 255 255 / 0.72);
+  --glass-surface-strong: rgb(255 255 255 / 0.85);
+  --glass-border: rgb(10 10 13 / 0.08);
+  --glass-highlight: rgb(255 255 255 / 0.9);
+  --glass-shadow: var(--shadow-float);
+  --glass-shadow-lg: var(--shadow-float-lg);
+  --aurora-opacity: 0.32;
+  --cursor-light: rgb(79 124 255 / 0.07);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: var(--color-ink-950);
-    --foreground: var(--color-ink-50);
-  }
+.dark {
+  --background: #060609;
+  --foreground: var(--color-ink-50);
+  /* Glass material, dark: charcoal panels lit from within. */
+  --glass-surface: rgb(19 19 24 / 0.6);
+  --glass-surface-strong: rgb(19 19 24 / 0.82);
+  --glass-border: rgb(255 255 255 / 0.08);
+  --glass-highlight: rgb(255 255 255 / 0.12);
+  --glass-shadow: var(--shadow-float-dark);
+  --glass-shadow-lg: var(--shadow-float-dark);
+  --aurora-opacity: 0.5;
+  --cursor-light: rgb(112 134 255 / 0.06);
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+/* ---------------------------------------------------------------------
+   Workspace materials. One place defines what "glass" is so every
+   floating layer refracts the same way (theme values above swap per
+   theme; components never hand-roll their own rgba soup).
+
+   Declared in the `components` layer so Tailwind utilities can still
+   override individual properties — unlayered, `.edge-light`'s
+   `position: relative` silently defeats the `fixed` utility on the
+   sidebar and dock (cascade layers lose to unlayered styles). */
+
+@layer components {
+
+.glass {
+  background: var(--glass-surface);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.glass-strong {
+  background: var(--glass-surface-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+}
+
+/* Top edge catches the light — the "edge highlight" every floating
+   panel carries so it reads as a physical object, not a border box. */
+.edge-light {
+  position: relative;
+}
+
+.edge-light::before {
+  content: "";
+  position: absolute;
+  inset: 0 8% auto 8%;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--glass-highlight), transparent);
+  pointer-events: none;
+}
+
+/* The hero gradient — blue light bending through violet into magenta. */
+.text-aurora {
+  background: linear-gradient(
+    100deg,
+    var(--color-aurora-blue) 0%,
+    var(--color-aurora-violet) 55%,
+    var(--color-aurora-magenta) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+} /* @layer components */
+
+/* ---------------------------------------------------------------------
+   Ambient motion. Long-period drift for the far-background light — slow
+   enough to feel like weather, never like an animation playing. */
+
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+  33% {
+    transform: translate3d(4%, -6%, 0) rotate(8deg) scale(1.08);
+  }
+  66% {
+    transform: translate3d(-5%, 4%, 0) rotate(-6deg) scale(0.95);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes aurora-drift-alt {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+  50% {
+    transform: translate3d(-6%, 7%, 0) rotate(-10deg) scale(1.12);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes pulse-line {
+  0%,
+  100% {
+    stroke-opacity: 0.12;
+  }
+  50% {
+    stroke-opacity: 0.45;
+  }
+}
+
+.aurora-blob {
+  animation: aurora-drift 26s ease-in-out infinite;
+  will-change: transform;
+}
+
+.aurora-blob-alt {
+  animation: aurora-drift-alt 34s ease-in-out infinite;
+  will-change: transform;
+}
+
+.graph-edge-pulse {
+  animation: pulse-line 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob,
+  .aurora-blob-alt,
+  .graph-edge-pulse {
+    animation: none;
+  }
 }
