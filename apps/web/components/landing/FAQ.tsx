@@ -28,8 +28,8 @@ const QUESTIONS = [
     a: "Its indexed graph and generated Briefing are deleted from Blueprint's storage. Nothing was ever written back to the repository itself.",
   },
   {
-    q: "Can I try it before paying?",
-    a: "Yes — Foundation is free for one repository, with the same read-only access and analysis pipeline the paid plans use, so what you see is what you'd get.",
+    q: "What does Blueprint cost?",
+    a: "Pricing isn't finalized yet. Connect a repository and use the workspace — we'll announce a plan when there's one worth announcing.",
   },
 ];
 

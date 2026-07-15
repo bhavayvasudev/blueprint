@@ -181,11 +181,12 @@ export function ProductPreview() {
           </h2>
           <p className="mt-4 text-lg leading-relaxed text-ink-500 dark:text-ink-400">
             The same study, read five ways — the architect&apos;s thesis, the shape of the system,
-            an open question, a search, the evidence underneath.
+            an open question, a search, the evidence underneath. Shown on a worked example
+            repository, not live data.
           </p>
         </ScrollReveal>
 
-        <ScrollReveal delay={0.1} className="mt-14">
+        <ScrollReveal delay={0.1} className="mt-16">
           <Surface padding="sm" className="!p-0 overflow-hidden" as="div">
             {/* Browser chrome */}
             <div className="flex items-center gap-3 border-b border-ink-950/6 px-5 py-3.5 dark:border-white/8">

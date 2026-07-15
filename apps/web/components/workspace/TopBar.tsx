@@ -50,13 +50,22 @@ export function TopBar({
         <motion.button
           type="button"
           onClick={onOpenSearch}
-          whileHover={{ scale: 1.03 }}
+          initial="rest"
+          whileHover="hover"
+          animate="rest"
           whileTap={{ scale: 0.96 }}
+          variants={{ rest: { scale: 1 }, hover: { scale: 1.03 } }}
           transition={{ type: "spring", stiffness: 400, damping: 22 }}
           className="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm text-ink-500 transition-colors hover:bg-ink-950/5 hover:text-ink-950 dark:text-ink-400 dark:hover:bg-white/8 dark:hover:text-ink-50"
           aria-label="Search"
         >
-          <IconSearch className="size-4" />
+          <motion.span
+            variants={{ rest: { rotate: 0, scale: 1 }, hover: { rotate: -8, scale: 1.08 } }}
+            transition={{ type: "spring", stiffness: 320, damping: 18 }}
+            className="flex"
+          >
+            <IconSearch className="size-4" />
+          </motion.span>
           <span className="hidden md:inline">Search</span>
           <span className="hidden rounded-md border border-ink-200/70 px-1.5 py-0.5 font-mono text-xs text-ink-500 md:inline dark:border-ink-700/70 dark:text-ink-400">
             ⌘K

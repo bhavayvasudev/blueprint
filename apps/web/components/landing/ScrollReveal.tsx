@@ -33,8 +33,8 @@ export function ScrollReveal({
 
   return (
     <motion.div
-      initial={{ opacity: 0.001, y: distance, filter: "blur(6px)" }}
-      whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      initial={{ opacity: 0.001, y: distance, scale: 0.98, filter: "blur(6px)" }}
+      whileInView={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
       viewport={{ once, margin: "-10% 0px -10% 0px" }}
       transition={{ type: "spring", stiffness: 100, damping: 20, mass: 0.9, delay }}
       className={className}

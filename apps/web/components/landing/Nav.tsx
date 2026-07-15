@@ -1,15 +1,15 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Magnetic, Reveal } from "@blueprint/ui";
 import { BlueprintMark, IconGitHub } from "@/components/workspace/icons";
 
 const LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#how-it-works", label: "How It Works" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#product-preview", label: "Docs" },
+  { hash: "#features", label: "Features" },
+  { hash: "#how-it-works", label: "How It Works" },
 ];
 
 /** The landing page's one piece of chrome — a floating glass pill, not a
@@ -19,25 +19,56 @@ const LINKS = [
  * target section carries `scroll-mt-28` so it never lands under the
  * pill. */
 export function LandingNav({ signInHref }: { signInHref: string }) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  const reduceMotion = useReducedMotion();
+  const pathname = usePathname();
+  const isHome = pathname === "/";
+  const homeHref = isHome ? "#top" : "/";
+  const navItems = [
+    ...LINKS.map((link) => ({
+      key: link.hash,
+      label: link.label,
+      href: isHome ? link.hash : `/${link.hash}`,
+    })),
+    { key: "docs", label: "Docs", href: "/docs" },
+  ];
+
   return (
     <Reveal distance={12} className="fixed inset-x-0 top-4 z-30 flex justify-center px-4 sm:top-6">
       <nav
         aria-label="Primary"
         className="glass edge-light flex w-full max-w-3xl items-center justify-between gap-4 rounded-full px-4 py-2.5 sm:px-5"
       >
-        <a href="#top" className="flex shrink-0 items-center gap-2">
+        <motion.a
+          href={homeHref}
+          whileHover={reduceMotion ? undefined : { scale: 1.05 }}
+          transition={{ type: "spring", stiffness: 380, damping: 20 }}
+          className="flex shrink-0 items-center gap-2"
+        >
           <BlueprintMark className="size-7 text-accent-500" />
           <span className="hidden text-sm font-semibold tracking-tight text-ink-950 sm:inline dark:text-ink-50">
             Blueprint
           </span>
-        </a>
+        </motion.a>
 
-        <ul className="hidden items-center gap-1 md:flex">
-          {LINKS.map((link) => (
-            <li key={link.href}>
+        <ul
+          className="hidden items-center gap-1 md:flex"
+          onMouseLeave={() => setHovered(null)}
+        >
+          {navItems.map((link) => (
+            <li key={link.key} className="relative">
+              {hovered === link.key && (
+                <motion.span
+                  layoutId="nav-hover-pill"
+                  className="absolute inset-0 rounded-full bg-ink-950/5 dark:bg-white/8"
+                  transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 32 }}
+                />
+              )}
               <a
                 href={link.href}
-                className="rounded-full px-3.5 py-1.5 text-sm font-medium text-ink-600 transition-colors hover:bg-ink-950/5 hover:text-ink-950 dark:text-ink-300 dark:hover:bg-white/8 dark:hover:text-ink-50"
+                onMouseEnter={() => setHovered(link.key)}
+                onFocus={() => setHovered(link.key)}
+                className="relative z-10 rounded-full px-3.5 py-1.5 text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 dark:text-ink-300 dark:hover:text-ink-50"
               >
                 {link.label}
               </a>

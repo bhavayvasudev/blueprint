@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Button, Surface } from "@blueprint/ui";
 import { ScrollReveal } from "./ScrollReveal";
@@ -25,26 +26,25 @@ const COLUMNS = [
   {
     label: "Product",
     links: [
-      { label: "Features", href: "#features" },
-      { label: "How it works", href: "#how-it-works" },
-      { label: "Pricing", href: "#pricing" },
-      { label: "Changelog", href: "#" },
+      { label: "Features", href: "#features", anchor: true },
+      { label: "How it works", href: "#how-it-works", anchor: true },
+      { label: "Changelog", href: "/changelog", anchor: false },
     ],
   },
   {
     label: "Resources",
     links: [
-      { label: "Docs", href: "#product-preview" },
-      { label: "API", href: "#" },
-      { label: "GitHub", href: "https://github.com" },
+      { label: "Docs", href: "/docs", anchor: false },
+      { label: "API", href: "/api", anchor: false },
+      { label: "GitHub", href: "https://github.com", anchor: false },
     ],
   },
   {
     label: "Company",
     links: [
-      { label: "Privacy", href: "#" },
-      { label: "Terms", href: "#" },
-      { label: "Contact", href: "mailto:hello@blueprint.dev" },
+      { label: "Privacy", href: "/privacy", anchor: false },
+      { label: "Terms", href: "/terms", anchor: false },
+      { label: "Contact", href: "/contact", anchor: false },
     ],
   },
 ] as const;
@@ -84,6 +84,9 @@ function NewsletterForm() {
 }
 
 export function Footer() {
+  const pathname = usePathname();
+  const isHome = pathname === "/";
+
   return (
     <footer className="relative z-10 px-6 pb-10 lg:px-12">
       <ScrollReveal className="mx-auto max-w-6xl">
@@ -134,7 +137,7 @@ export function Footer() {
                     {column.links.map((link) => (
                       <li key={link.label}>
                         <a
-                          href={link.href}
+                          href={link.anchor && !isHome ? `/${link.href}` : link.href}
                           className="text-sm text-ink-600 transition-colors hover:text-ink-950 dark:text-ink-300 dark:hover:text-ink-50"
                         >
                           {link.label}

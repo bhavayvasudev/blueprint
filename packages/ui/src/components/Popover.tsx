@@ -159,14 +159,14 @@ export function Popover({
           role="menu"
           aria-label={rest["aria-label"]}
           tabIndex={-1}
-          initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: -6 }}
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.94, y: -6 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={
             reduceMotion
               ? { opacity: 0, transition: { duration: 0 } }
-              : { opacity: 0, scale: 0.96, y: -6, transition: { duration: 0.16, ease: "easeIn" } }
+              : { opacity: 0, scale: 0.96, y: -4, transition: { duration: 0.14, ease: "easeIn" } }
           }
-          transition={{ duration: 0.22, ease: "easeOut" }}
+          transition={{ type: "spring", stiffness: 420, damping: 28, mass: 0.6 }}
           style={{
             position: "fixed",
             top: position.top,

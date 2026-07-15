@@ -173,6 +173,16 @@ export function IconClock({ className }: IconProps) {
   );
 }
 
+export function IconMore({ className }: IconProps) {
+  return (
+    <svg {...base(className)} fill="currentColor" stroke="none">
+      <circle cx="12" cy="5.5" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="12" cy="18.5" r="1.6" />
+    </svg>
+  );
+}
+
 export function IconSpinner({ className }: IconProps) {
   return (
     <svg {...base(className)}>
@@ -261,9 +271,15 @@ export function IconCommand({ className }: IconProps) {
 
 /** The Blueprint mark — a "B" set in a rounded plate, used at every
  * scale from favicon-size to the sidebar wordmark. */
-export function BlueprintMark({ className }: IconProps) {
+export function BlueprintMark({ className, size }: IconProps & { size?: number }) {
   return (
-    <svg className={className} viewBox="0 0 32 32" fill="none" aria-hidden>
+    <svg
+      className={className}
+      viewBox="0 0 32 32"
+      fill="none"
+      aria-hidden
+      {...(size ? { width: size, height: size } : {})}
+    >
       <rect x="1" y="1" width="30" height="30" rx="9" fill="currentColor" fillOpacity="0.12" />
       <rect x="1" y="1" width="30" height="30" rx="9" stroke="currentColor" strokeOpacity="0.25" />
       <path

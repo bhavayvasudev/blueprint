@@ -20,6 +20,7 @@ from services.installation_service import upsert_installation
 from services.repository_connection_service import (
     RepositoryAlreadyConnected,
     RepositoryNotFound,
+    connect_all_available_repositories,
     connect_repository,
     get_connected_repository,
     list_available_repositories,
@@ -147,6 +148,64 @@ def test_list_and_get_connected_repositories_are_scoped_to_the_user(
     assert len(connected) == 1
     fetched = get_connected_repository(db_session, user=user, repository_id=connected[0].id)
     assert fetched.id == connected[0].id
+
+
+def test_connect_all_available_repositories_connects_everything_new(
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repos = [
+        RepositoryMetadata(
+            external_id="55", full_name="acme/widgets", default_branch="main", private=True,
+            html_url="https://github.com/acme/widgets",
+        ),
+        RepositoryMetadata(
+            external_id="56", full_name="acme/gadgets", default_branch="main", private=False,
+            html_url="https://github.com/acme/gadgets",
+        ),
+    ]
+    _patch_provider(monkeypatch, FakeRepositoryProvider(repos))
+
+    connected = connect_all_available_repositories(
+        db_session, user=user, installation_id=installation.id
+    )
+    assert {repo.full_name for repo in connected} == {"acme/widgets", "acme/gadgets"}
+
+    all_connected = list_connected_repositories(db_session, user=user)
+    assert len(all_connected) == 2
+
+
+def test_connect_all_available_repositories_skips_already_connected(
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repos = [
+        RepositoryMetadata(
+            external_id="55", full_name="acme/widgets", default_branch="main", private=True,
+            html_url="https://github.com/acme/widgets",
+        ),
+        RepositoryMetadata(
+            external_id="56", full_name="acme/gadgets", default_branch="main", private=False,
+            html_url="https://github.com/acme/gadgets",
+        ),
+    ]
+    _patch_provider(monkeypatch, FakeRepositoryProvider(repos))
+    connect_repository(db_session, user=user, installation_id=installation.id, full_name="acme/widgets")
+
+    connected = connect_all_available_repositories(
+        db_session, user=user, installation_id=installation.id
+    )
+    assert [repo.full_name for repo in connected] == ["acme/gadgets"]
+    assert len(list_connected_repositories(db_session, user=user)) == 2
+
+
+def test_connect_all_available_repositories_marks_installation_revoked_on_not_installed(
+    db_session: Session, user: User, installation: Installation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_provider(monkeypatch, FakeRepositoryProvider([], raise_not_installed=True))
+
+    with pytest.raises(GitHubAppNotInstalled):
+        connect_all_available_repositories(db_session, user=user, installation_id=installation.id)
+
+    assert installation.status == InstallationStatus.REVOKED
 
 
 def test_get_connected_repository_raises_not_found_for_a_different_user(

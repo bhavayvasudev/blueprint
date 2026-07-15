@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Repository, Snapshot } from "@blueprint/shared-types";
-import { Reveal, Text } from "@blueprint/ui";
+import { Badge, Reveal, Text } from "@blueprint/ui";
 import { ConnectPanel } from "@/components/ConnectPanel";
 import { ClaimBlock } from "@/components/study/ClaimBlock";
 import { MethodRows } from "@/components/study/MethodRows";
@@ -73,7 +73,8 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
       activeNav="briefing"
       activeRepoId={repository?.id ?? null}
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-16 px-6 pb-10 pt-28 xl:px-8 xl:pt-24">
+      <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 pb-10 pt-28 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-16 xl:px-8 xl:pt-24">
+        <div className="flex min-w-0 flex-col gap-16">
         {repository && graph && reading && currentReady ? (
           <>
             {/* Who is being briefed, on what, from when — the quiet context line. */}
@@ -183,6 +184,20 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
               Installation requested — waiting on organization owner approval.
             </Text>
           ) : null}
+          {searchParams.installed === "1" && searchParams.repo_sync_error !== "1" ? (
+            <Text size="sm" className="text-status-ready-deep dark:text-status-ready">
+              GitHub connected —{" "}
+              {repositories.length > 0
+                ? `${repositories.length} ${repositories.length === 1 ? "repository is" : "repositories are"} ready below.`
+                : "reading your repositories now."}
+            </Text>
+          ) : null}
+          {searchParams.repo_sync_error === "1" ? (
+            <Text size="sm" className="text-status-failed-deep dark:text-status-failed">
+              GitHub is connected, but I couldn&apos;t pull your repositories just now. Use
+              &ldquo;Sync from GitHub&rdquo; below to retry.
+            </Text>
+          ) : null}
           <ConnectPanel
             installations={installations}
             connectedFullNames={new Set(repositories.map((repo) => repo.full_name))}
@@ -194,6 +209,76 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
             {installations.length > 0 ? "Grant access to more repositories" : "Connect your GitHub account"}
           </a>
         </section>
+      </div>
+
+        {repositories.length > 0 ? (
+          <Reveal delay={0.14} distance={16}>
+            <aside className="flex flex-col gap-8 lg:sticky lg:top-28">
+              <div className="flex flex-col gap-4">
+                <SectionRule>Recent repositories</SectionRule>
+                <ul className="flex flex-col gap-1">
+                  {[...repositories]
+                    .sort((a, b) => (b.last_synced_at ?? "").localeCompare(a.last_synced_at ?? ""))
+                    .slice(0, 5)
+                    .map((repo) => (
+                      <li key={repo.id}>
+                        <Link
+                          href={`/repo/${repo.id}`}
+                          className="group flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 transition-colors hover:bg-ink-950/5 dark:hover:bg-white/6"
+                        >
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate font-mono text-sm text-ink-800 group-hover:text-ink-950 dark:text-ink-200 dark:group-hover:text-ink-50">
+                              {repo.full_name}
+                            </span>
+                            <span className="text-xs text-ink-400 dark:text-ink-500">
+                              {repo.last_synced_at ? `synced ${timeAgo(repo.last_synced_at)}` : "never synced"}
+                            </span>
+                          </span>
+                          <Badge tone={repo.connection_status === "connected" ? "ready" : "failed"}>
+                            {repo.connection_status}
+                          </Badge>
+                        </Link>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <SectionRule>Quick actions</SectionRule>
+                <div className="flex flex-col gap-1">
+                  {repository ? (
+                    <Link
+                      href={`/repo/${repository.id}`}
+                      className="rounded-lg px-2.5 py-2 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-950/5 hover:text-ink-950 dark:text-ink-300 dark:hover:bg-white/6 dark:hover:text-ink-50"
+                    >
+                      Open the Atlas →
+                    </Link>
+                  ) : null}
+                  {repository && graph ? (
+                    <Link
+                      href={`/repo/${repository.id}/insights`}
+                      className="rounded-lg px-2.5 py-2 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-950/5 hover:text-ink-950 dark:text-ink-300 dark:hover:bg-white/6 dark:hover:text-ink-50"
+                    >
+                      View Insights →
+                    </Link>
+                  ) : null}
+                  <a
+                    href="#connect"
+                    className="rounded-lg px-2.5 py-2 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-950/5 hover:text-ink-950 dark:text-ink-300 dark:hover:bg-white/6 dark:hover:text-ink-50"
+                  >
+                    Study another repository →
+                  </a>
+                  <Link
+                    href="/repositories"
+                    className="rounded-lg px-2.5 py-2 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-950/5 hover:text-ink-950 dark:text-ink-300 dark:hover:bg-white/6 dark:hover:text-ink-50"
+                  >
+                    Browse all repositories →
+                  </Link>
+                </div>
+              </div>
+            </aside>
+          </Reveal>
+        ) : null}
       </div>
     </WorkspaceShell>
   );

@@ -5,6 +5,7 @@ see ADR-024's note on Postgres RLS not yet being wired up), and mark an
 installation revoked when GitHub tells us it's gone.
 """
 
+import logging
 import uuid
 
 from sqlalchemy import select
@@ -15,6 +16,8 @@ from integrations.repository.base import InstallationMetadata
 from models.installation import Installation
 from models.repository import User
 from models.types import InstallationStatus
+
+logger = logging.getLogger(__name__)
 
 
 class InstallationNotFound(Exception):
@@ -38,6 +41,12 @@ def upsert_installation(
         existing.account_type = metadata.account_type
         existing.status = InstallationStatus.ACTIVE
         db.flush()
+        logger.info(
+            "upsert_installation: updated existing row id=%s external_id=%s for user_id=%s",
+            existing.id,
+            existing.external_id,
+            user.id,
+        )
         return existing
 
     installation = Installation(
@@ -50,6 +59,12 @@ def upsert_installation(
     )
     db.add(installation)
     db.flush()
+    logger.info(
+        "upsert_installation: created new row id=%s external_id=%s for user_id=%s",
+        installation.id,
+        installation.external_id,
+        user.id,
+    )
     return installation
 
 

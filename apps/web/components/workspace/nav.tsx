@@ -45,8 +45,8 @@ export const WORKSPACE_NAV: WorkspaceNavItem[] = [
     label: "The Threads",
     dockLabel: "Threads",
     icon: IconThreads,
-    href: () => null,
-    unavailableHint: "Ships in a later phase",
+    href: (repoId) => (repoId ? `/repo/${repoId}/threads` : null),
+    unavailableHint: "Awaits a connected repository",
   },
   {
     key: "insights",

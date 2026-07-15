@@ -1,5 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import { Badge, ProportionBar, Reveal, StatBlock, Surface, Text } from "@blueprint/ui";
+import type { Snapshot } from "@blueprint/shared-types";
+import { Badge, ProportionBar, Reveal, StatBlock, Surface, Text, Tilt } from "@blueprint/ui";
+import { CountUp } from "@/components/landing/CountUp";
+import { ClaimBlock } from "@/components/study/ClaimBlock";
 import { ConfidenceMark } from "@/components/study/Confidence";
 import { SectionRule } from "@/components/study/SectionRule";
 import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
@@ -11,9 +14,63 @@ import {
   listSnapshots,
 } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
-import { analyzeGraph, type Confidence } from "@/lib/insights";
+import { analyzeGraph, type Claim, type Confidence } from "@/lib/insights";
 
 const CONFIDENCE_ORDER: Confidence[] = ["measured", "likely", "undetermined"];
+
+/** How far back the timeline looks — bounded so a long-lived repository
+ * doesn't force a graph fetch per historical snapshot; enough studies to
+ * cover "this week" for a repository synced roughly daily. */
+const TIMELINE_SNAPSHOT_LIMIT = 8;
+
+type TimelineBucket = "Today" | "Yesterday" | "This week" | "Earlier";
+const BUCKET_ORDER: TimelineBucket[] = ["Today", "Yesterday", "This week", "Earlier"];
+
+function bucketFor(iso: string): TimelineBucket {
+  const startOfDay = (ms: number) => {
+    const d = new Date(ms);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  const days = Math.round((startOfDay(Date.now()) - startOfDay(new Date(iso).getTime())) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days <= 7) return "This week";
+  return "Earlier";
+}
+
+/** Real structural movement between consecutive ready studies, reusing
+ * `analyzeGraph`'s own delta engine (never inventing an event that
+ * didn't happen) — grouped by the day the newer study ran. */
+async function buildTimeline(
+  repositoryId: string,
+  readySnapshots: Snapshot[],
+): Promise<[TimelineBucket, { snapshot: Snapshot; claim: Claim }[]][]> {
+  const window = readySnapshots.slice(0, TIMELINE_SNAPSHOT_LIMIT);
+  if (window.length < 2) return [];
+
+  const graphs = await Promise.all(
+    window.map((snapshot) => getArchitectureGraph(repositoryId, snapshot.id)),
+  );
+
+  const entries: { snapshot: Snapshot; claim: Claim }[] = [];
+  for (let i = 0; i < graphs.length - 1; i += 1) {
+    const { deltas } = analyzeGraph(graphs[i]!, graphs[i + 1]!);
+    for (const claim of deltas ?? []) {
+      if (claim.id === "delta-stable") continue;
+      entries.push({ snapshot: window[i]!, claim });
+    }
+  }
+
+  const grouped = new Map<TimelineBucket, { snapshot: Snapshot; claim: Claim }[]>();
+  for (const entry of entries) {
+    const bucket = bucketFor(entry.snapshot.created_at);
+    grouped.set(bucket, [...(grouped.get(bucket) ?? []), entry]);
+  }
+  return BUCKET_ORDER.filter((bucket) => grouped.has(bucket)).map((bucket) => [
+    bucket,
+    grouped.get(bucket)!,
+  ]);
+}
 
 /** Insights — the same study as the Briefing, read as evidence instead
  * of prose. Where the Briefing leads with a thesis and the Atlas leads
@@ -37,6 +94,8 @@ export default async function InsightsPage(props: PageProps<"/repo/[id]/insights
   const latestSnapshot = snapshots[0] ?? null;
   const graph = latestSnapshot?.status === "ready" ? await getArchitectureGraph(id, latestSnapshot.id) : null;
   const reading = graph ? analyzeGraph(graph) : null;
+  const readySnapshots = snapshots.filter((s) => s.status === "ready");
+  const timeline = graph ? await buildTimeline(id, readySnapshots) : [];
 
   return (
     <WorkspaceShell user={user} repositories={repositories} activeNav="insights" activeRepoId={repository.id}>
@@ -62,31 +121,68 @@ export default async function InsightsPage(props: PageProps<"/repo/[id]/insights
         {graph && reading ? (
           <>
             <Reveal delay={0.12} distance={18} className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <Surface padding="md">
-                <StatBlock label="Files" value={graph.file_count.toLocaleString()} />
-              </Surface>
-              <Surface padding="md">
-                <StatBlock label="Modules" value={reading.modules.length.toLocaleString()} />
-              </Surface>
-              <Surface padding="md">
-                <StatBlock
-                  label="Imports"
-                  value={graph.repository_graph_edges.length.toLocaleString()}
-                  detail="dependency edges"
-                />
-              </Surface>
-              <Surface padding="md">
-                <StatBlock
-                  label="Confidence"
-                  value={
-                    graph.file_count > 0
-                      ? `${Math.round((graph.tree_sitter_status.full_confidence_files / graph.file_count) * 100)}%`
-                      : "—"
-                  }
-                  detail={`${graph.tree_sitter_status.full_confidence_files.toLocaleString()} of ${graph.file_count.toLocaleString()} files fully parsed`}
-                />
-              </Surface>
+              <Tilt maxTilt={3}>
+                <Surface padding="md">
+                  <StatBlock label="Files" value={<CountUp value={graph.file_count} />} />
+                </Surface>
+              </Tilt>
+              <Tilt maxTilt={3}>
+                <Surface padding="md">
+                  <StatBlock label="Modules" value={<CountUp value={reading.modules.length} />} />
+                </Surface>
+              </Tilt>
+              <Tilt maxTilt={3}>
+                <Surface padding="md">
+                  <StatBlock
+                    label="Imports"
+                    value={<CountUp value={graph.repository_graph_edges.length} />}
+                    detail="dependency edges"
+                  />
+                </Surface>
+              </Tilt>
+              <Tilt maxTilt={3}>
+                <Surface padding="md">
+                  <StatBlock
+                    label="Confidence"
+                    value={
+                      graph.file_count > 0 ? (
+                        <CountUp
+                          value={Math.round(
+                            (graph.tree_sitter_status.full_confidence_files / graph.file_count) * 100,
+                          )}
+                          suffix="%"
+                        />
+                      ) : (
+                        "—"
+                      )
+                    }
+                    detail={`${graph.tree_sitter_status.full_confidence_files.toLocaleString()} of ${graph.file_count.toLocaleString()} files fully parsed`}
+                  />
+                </Surface>
+              </Tilt>
             </Reveal>
+
+            {timeline.length > 0 ? (
+              <section className="flex flex-col gap-8">
+                <SectionRule>Timeline</SectionRule>
+                {timeline.map(([bucket, entries]) => (
+                  <div key={bucket} className="flex flex-col gap-5">
+                    <h3 className="text-sm font-semibold text-ink-500 dark:text-ink-400">{bucket}</h3>
+                    <div className="flex flex-col gap-6">
+                      {entries.map(({ snapshot, claim }) => (
+                        <div key={`${snapshot.id}-${claim.id}`} className="flex flex-col gap-1.5">
+                          <span className="text-xs text-ink-400 dark:text-ink-500">
+                            {timeAgo(snapshot.created_at) ?? "just now"}
+                            {snapshot.commit_sha ? ` · ${snapshot.commit_sha.slice(0, 7)}` : ""}
+                          </span>
+                          <ClaimBlock claim={claim} repositoryId={repository.id} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            ) : null}
 
             {graph.language_mix.length > 0 ? (
               <section className="flex flex-col gap-5">

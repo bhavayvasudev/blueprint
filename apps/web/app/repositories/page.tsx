@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
-import { Reveal } from "@blueprint/ui";
+import { Reveal, StaggerList } from "@blueprint/ui";
 import { RepositoryCard } from "@/components/RepositoryCard";
 import { ConnectPanel } from "@/components/ConnectPanel";
 import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import { getCurrentUser, listInstallations, listRepositories } from "@/lib/api";
 import { PUBLIC_API_BASE_URL } from "@/lib/config";
+import { getRepositoryFacts } from "@/lib/repository-facts";
 
 /** Repositories — every repository the architect has been given, in
  * one browsable grid, and the one place to grant it another. Reached
@@ -17,6 +18,7 @@ export default async function RepositoriesPage() {
   }
 
   const [repositories, installations] = await Promise.all([listRepositories(), listInstallations()]);
+  const facts = await getRepositoryFacts(repositories);
 
   return (
     <WorkspaceShell user={user} repositories={repositories} activeNav="repositories" activeRepoId={null}>
@@ -45,11 +47,15 @@ export default async function RepositoriesPage() {
         </header>
 
         {repositories.length > 0 ? (
-          <Reveal delay={0.1} distance={18} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <StaggerList className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {repositories.map((repository) => (
-              <RepositoryCard key={repository.id} repository={repository} />
+              <RepositoryCard
+                key={repository.id}
+                repository={repository}
+                facts={facts.get(repository.id)}
+              />
             ))}
-          </Reveal>
+          </StaggerList>
         ) : null}
 
         <section className="flex max-w-2xl flex-col gap-5">

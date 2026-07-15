@@ -4,7 +4,7 @@ import { useId } from "react";
 import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
 const FIELD_CLASSES =
-  "w-full rounded-md border border-ink-200 bg-white/70 px-3 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 outline-none transition-colors focus-visible:border-accent-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ink-700 dark:bg-ink-900/70 dark:text-ink-50 dark:placeholder:text-ink-500";
+  "w-full rounded-md border border-ink-200 bg-white/70 px-3 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 outline-none transition-[border-color,box-shadow] duration-200 focus-visible:border-accent-500 focus-visible:shadow-[0_0_0_4px_rgb(46_107_255/0.14)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-ink-700 dark:bg-ink-900/70 dark:text-ink-50 dark:placeholder:text-ink-500 dark:focus-visible:shadow-[0_0_0_4px_rgb(46_107_255/0.22)]";
 
 interface FieldShellProps {
   id: string;

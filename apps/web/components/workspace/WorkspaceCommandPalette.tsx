@@ -15,13 +15,14 @@ import {
   IconInsights,
   IconLogout,
   IconPlus,
+  IconThreads,
 } from "./icons";
 
 /** The ⌘K layer's real command set — every entry routes somewhere real
  * or opens a real dialog. Rooms that don't exist for the current
- * context (Atlas/Insights with no active repository, Threads before it
- * ships) simply don't appear, rather than appearing disabled — a
- * command palette's job is to offer only what it can actually do. */
+ * context (Atlas/Insights/Threads with no active repository) simply
+ * don't appear, rather than appearing disabled — a command palette's
+ * job is to offer only what it can actually do. */
 export function WorkspaceCommandPalette({
   open,
   onClose,
@@ -65,6 +66,14 @@ export function WorkspaceCommandPalette({
               icon: <IconInsights className="size-4" />,
               keywords: "stats metrics language confidence",
               onSelect: () => router.push(`/repo/${activeRepoId}/insights`),
+            },
+            {
+              id: "nav-threads",
+              label: "The Threads",
+              hint: "Coming soon",
+              icon: <IconThreads className="size-4" />,
+              keywords: "chat ask question",
+              onSelect: () => router.push(`/repo/${activeRepoId}/threads`),
             },
           ]
         : []),

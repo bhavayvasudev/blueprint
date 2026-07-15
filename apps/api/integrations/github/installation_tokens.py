@@ -13,6 +13,7 @@ the first time it needs one — an acceptable, GitHub-permitted redundancy,
 not a correctness problem.
 """
 
+import logging
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,8 @@ from integrations.github.app_jwt import generate_app_jwt
 from integrations.github.client import GitHubClient
 from integrations.github.config import GitHubAppConfig
 from integrations.github.exceptions import GitHubAuthError, InstallationTokenExpired
+
+logger = logging.getLogger(__name__)
 
 _REFRESH_MARGIN_SECONDS = 60
 
@@ -73,11 +76,17 @@ class InstallationTokenCache:
         return cached.expires_at
 
     def _mint(self, installation_id: str) -> tuple[str, datetime]:
+        logger.info("Minting installation access token for installation_id=%s", installation_id)
         app_jwt = generate_app_jwt(self._config.app_id, self._config.private_key, now=time.time())
         client = GitHubClient(token=app_jwt, transport=self._transport)
         try:
             data = client.post(f"/app/installations/{installation_id}/access_tokens")
         except GitHubAuthError as exc:
+            logger.error(
+                "App JWT rejected while minting token for installation_id=%s — "
+                "check GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY",
+                installation_id,
+            )
             raise InstallationTokenExpired(
                 f"App JWT was rejected while minting a token for installation "
                 f"{installation_id!r} — check GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY."
@@ -85,4 +94,5 @@ class InstallationTokenCache:
         expires_at = datetime.fromisoformat(data["expires_at"].replace("Z", "+00:00")).replace(
             tzinfo=None
         )
+        logger.info("Minted installation token for installation_id=%s, expires_at=%s", installation_id, expires_at)
         return str(data["token"]), expires_at

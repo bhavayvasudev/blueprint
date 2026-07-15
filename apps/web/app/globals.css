@@ -41,6 +41,21 @@
   --glow-opacity: 0.22;
 }
 
+/* Hero composition only: the ambient glass tokens above are tuned for
+   panels floating over open background (dock, top pill). The hero's
+   product shot reads as one composed object, not a window onto the
+   background behind it — every plate stays near-opaque so nothing
+   behind a card fights for legibility with the card's own content. */
+.hero-scene {
+  --glass-surface: rgb(255 254 252 / 0.97);
+  --glass-surface-strong: rgb(255 254 252 / 0.98);
+}
+
+.dark .hero-scene {
+  --glass-surface: rgb(22 21 19 / 0.95);
+  --glass-surface-strong: rgb(22 21 19 / 0.97);
+}
+
 html {
   color-scheme: light;
   scroll-behavior: smooth;
@@ -146,9 +161,97 @@ body {
   animation: edge-flow 1.1s linear infinite;
 }
 
+/* Keystone breathing — the node at the center of a graph is "alive",
+   never a static dot. Small enough to read as presence, not a spinner. */
+@keyframes node-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+/* A slow sonar ping expanding out from the keystone — "this is where
+   the system's attention is," fired on a long, unhurried cadence. */
+@keyframes node-ripple {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* Long, gentle opacity drift on non-live edges — the graph reads as
+   quietly active rather than a still diagram, without competing with
+   the faster `edge-flow` current on a live dependency. */
+@keyframes edge-breathe {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.graph-node-pulse {
+  animation: node-pulse 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.graph-node-ripple {
+  animation: node-ripple 3.2s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.graph-edge-breathe {
+  animation: edge-breathe 5s ease-in-out infinite;
+}
+
+/* A light sweep crossing every skeleton bone in lockstep — reads as one
+   loading region settling in, not a grid of independent pulses. Layered
+   over the existing `animate-pulse` opacity breathing, not replacing it. */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -150% 0;
+  }
+  100% {
+    background-position: 150% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.55) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+.dark .skeleton-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.12) 50%,
+    transparent 70%
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glow-blob,
-  .graph-edge-flow {
+  .graph-edge-flow,
+  .graph-node-pulse,
+  .graph-node-ripple,
+  .graph-edge-breathe,
+  .skeleton-shimmer {
     animation: none;
   }
 }

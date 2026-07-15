@@ -114,14 +114,14 @@ export function CommandPalette({
             aria-label="Command palette"
             tabIndex={-1}
             onKeyDown={handleKeyDown}
-            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 8 }}
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={
               reduceMotion
                 ? { opacity: 0, transition: { duration: 0 } }
-                : { opacity: 0, scale: 0.96, y: 8, transition: { duration: 0.22, ease: "easeIn" } }
+                : { opacity: 0, scale: 0.97, y: 6, transition: { duration: 0.18, ease: "easeIn" } }
             }
-            transition={{ duration: 0.35, ease: "easeOut" }}
+            transition={{ type: "spring", stiffness: 340, damping: 30, mass: 0.7 }}
             className="glass-strong edge-light relative w-full max-w-xl overflow-hidden rounded-2xl outline-none"
           >
             <div className="flex items-center gap-3 border-b border-ink-100 px-5 py-4 dark:border-ink-800">

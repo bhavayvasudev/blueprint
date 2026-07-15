@@ -15,25 +15,25 @@ const STEPS = [
   {
     n: "01",
     title: "Repository",
-    description: "Connect over the GitHub App — read-only, no PATs, nothing leaves the documented posture.",
+    description: "Connect over the GitHub App — read-only, no PATs, nothing beyond the documented scope.",
     icon: IconGitHub,
   },
   {
     n: "02",
     title: "Indexing",
-    description: "Every file is parsed and every import resolved, with a confidence score per file.",
+    description: "Every file parsed, every import resolved — 1,482 files and 918 imports on this worked example.",
     icon: IconClock,
   },
   {
     n: "03",
     title: "Knowledge Graph",
-    description: "Files and imports become a graph of modules, dependencies, and cycles.",
+    description: "Files and imports become a graph — 32 modules here, keystone found by in-degree, cycles traced.",
     icon: IconGraph,
   },
   {
     n: "04",
     title: "AI Understanding",
-    description: "The graph is read into a thesis — a keystone, its cycles, its blast radius.",
+    description: "The graph is read into a thesis: graph-engine is this example's load-bearing module, and one cycle behind it.",
     icon: IconArchitecture,
   },
   {
@@ -57,14 +57,18 @@ export function HowItWorks() {
     <section id="how-it-works" className="relative z-10 scroll-mt-28 px-6 py-24 lg:px-12 lg:py-32">
       <div className="mx-auto max-w-6xl">
         <ScrollReveal className="mx-auto max-w-xl text-center">
+          <span className="inline-flex items-center rounded-full bg-ink-950/5 px-3 py-1 text-xs font-medium text-ink-500 dark:bg-white/8 dark:text-ink-400">
+            Worked example
+          </span>
           <h2
-            className="text-3xl font-semibold tracking-tight text-ink-950 sm:text-4xl xl:text-5xl dark:text-ink-50"
+            className="mt-4 text-3xl font-semibold tracking-tight text-ink-950 sm:text-4xl xl:text-5xl dark:text-ink-50"
             style={{ textWrap: "balance" }}
           >
             How Blueprint works.
           </h2>
           <p className="mt-4 text-lg leading-relaxed text-ink-500 dark:text-ink-400">
-            Five stages between a repository and an architect who has already read it.
+            Five stages between a repository and an architect who has already read it — shown
+            against one example repository, not a live benchmark.
           </p>
         </ScrollReveal>
 

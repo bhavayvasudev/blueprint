@@ -68,7 +68,7 @@ export function ArchitectureExplorer() {
           </p>
         </ScrollReveal>
 
-        <div className="mt-14 grid grid-cols-1 items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div className="mt-16 grid grid-cols-1 items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-20">
           <ScrollReveal delay={0.05}>
             <Tilt maxTilt={2} glare className="block">
               <Surface padding="lg" className="aspect-square w-full">
@@ -87,18 +87,29 @@ export function ArchitectureExplorer() {
                         stroke={live ? "var(--color-accent-500)" : "currentColor"}
                         strokeWidth={live ? 0.7 : 0.5}
                         strokeDasharray={live ? "6 10" : undefined}
-                        className={live ? "graph-edge-flow" : "text-ink-950/15 dark:text-white/15"}
+                        className={live ? "graph-edge-flow" : "graph-edge-breathe text-ink-950/15 dark:text-white/15"}
                       />
                     );
                   })}
                   {NODES.map((n) => (
                     <g key={n.id}>
+                      {n.ring === 0 && (
+                        <circle
+                          cx={n.x}
+                          cy={n.y}
+                          r={n.r}
+                          fill="none"
+                          stroke="var(--color-accent-500)"
+                          strokeWidth="0.6"
+                          className="graph-node-ripple"
+                        />
+                      )}
                       <circle
                         cx={n.x}
                         cy={n.y}
                         r={n.r}
                         fill={n.ring === 0 ? "var(--color-accent-500)" : "currentColor"}
-                        className={n.ring === 0 ? "" : "text-ink-950/45 dark:text-white/45"}
+                        className={n.ring === 0 ? "graph-node-pulse" : "text-ink-950/45 dark:text-white/45"}
                       />
                       <text
                         x={n.x}

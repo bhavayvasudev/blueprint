@@ -5,6 +5,7 @@ call with either the App JWT (installation-metadata lookups) or a cached
 installation access token (everything scoped to one installation's repos).
 """
 
+import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -17,6 +18,8 @@ from integrations.github.exceptions import GitHubAuthError
 from integrations.github.installation_tokens import InstallationTokenCache
 from integrations.repository.base import CloneCredentials, InstallationMetadata, RepositoryMetadata
 from models.types import AccountType
+
+logger = logging.getLogger(__name__)
 
 _PER_PAGE = 100
 
@@ -49,7 +52,12 @@ class GitHubRepositoryProvider:
                 data = client.get(
                     "/installation/repositories", params={"per_page": _PER_PAGE, "page": page}
                 )
+                total_count = data.get("total_count")
                 batch = data["repositories"]
+                logger.info(
+                    "list_repositories: installation_id=%s page=%d got %d repos (total_count=%s)",
+                    installation_id, page, len(batch), total_count,
+                )
                 repos.extend(batch)
                 if len(batch) < _PER_PAGE:
                     break
@@ -57,6 +65,7 @@ class GitHubRepositoryProvider:
             return repos
 
         repos = self._with_installation_client(installation_id, fetch)
+        logger.info("list_repositories: installation_id=%s -> %d repositories total", installation_id, len(repos))
         return [_to_repository_metadata(repo) for repo in repos]
 
     def get_repository(self, installation_id: str, full_name: str) -> RepositoryMetadata:
@@ -89,6 +98,10 @@ class GitHubRepositoryProvider:
         try:
             return fn(client)
         except GitHubAuthError:
+            logger.warning(
+                "installation_id=%s token rejected — forcing refresh and retrying once",
+                installation_id,
+            )
             token = self._token_cache.get_token(installation_id, force_refresh=True)
             client = GitHubClient(token=token, transport=self._transport)
             return fn(client)

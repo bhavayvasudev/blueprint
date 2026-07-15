@@ -11,12 +11,14 @@ import { Spinner } from "./Spinner";
 const VARIANTS = {
   primary:
     "bg-ink-950 text-white shadow-lg shadow-accent-500/25 transition-shadow hover:shadow-xl hover:shadow-accent-500/40 dark:bg-white dark:text-ink-950",
-  accent: "bg-accent-500 text-white transition-colors hover:bg-accent-600",
+  accent:
+    "bg-accent-500 text-white shadow-md shadow-accent-500/20 transition-shadow hover:shadow-lg hover:shadow-accent-500/35 hover:bg-accent-600",
   ghost:
-    "glass edge-light text-ink-700 transition-colors hover:text-ink-950 dark:text-ink-300 dark:hover:text-ink-50",
+    "glass edge-light text-ink-700 shadow-sm transition-shadow hover:shadow-md hover:text-ink-950 dark:text-ink-300 dark:hover:text-ink-50",
   quiet:
     "text-ink-500 transition-colors hover:text-ink-950 dark:text-ink-400 dark:hover:text-ink-50",
-  danger: "bg-status-failed text-white transition-colors hover:bg-status-failed/90",
+  danger:
+    "bg-status-failed text-white shadow-md shadow-status-failed/20 transition-shadow hover:shadow-lg hover:shadow-status-failed/35 hover:bg-status-failed/90",
 } as const;
 
 /* Compact controls take the 6px radius; md/lg are pills (MASTER.md §3). */
@@ -62,7 +64,8 @@ export function Button({
       type={type}
       disabled={isDisabled}
       aria-busy={loading || undefined}
-      whileTap={reduceMotion || isDisabled ? undefined : { scale: 0.97 }}
+      whileHover={reduceMotion || isDisabled ? undefined : { y: -2, scale: 1.012 }}
+      whileTap={reduceMotion || isDisabled ? undefined : { scale: 0.965, y: 0 }}
       transition={{ type: "spring", stiffness: 260, damping: 18, mass: 0.5 }}
       className={`inline-flex cursor-pointer items-center justify-center gap-2 font-medium disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING} ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...rest}

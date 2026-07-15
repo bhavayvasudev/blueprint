@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { Popover, PopoverDivider, PopoverItem, PopoverSectionLabel } from "@blueprint/ui";
 import type { Repository } from "@blueprint/shared-types";
 import { useRouter } from "next/navigation";
@@ -46,12 +47,15 @@ export function RepoSwitcher({
 
   return (
     <>
-      <button
+      <motion.button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
+        whileHover={{ scale: 1.015 }}
+        whileTap={{ scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 400, damping: 24 }}
         className="flex max-w-56 items-center gap-2 truncate rounded-full px-3 py-1.5 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-950/5 dark:text-ink-200 dark:hover:bg-white/8"
       >
         <span
@@ -60,8 +64,14 @@ export function RepoSwitcher({
         <span className="truncate">
           {active ? repoDisplayName(active.full_name) : "Select repository"}
         </span>
-        <IconChevronDown className="size-3.5 shrink-0 text-ink-400" />
-      </button>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ type: "spring", stiffness: 380, damping: 24 }}
+          className="flex shrink-0"
+        >
+          <IconChevronDown className="size-3.5 text-ink-400" />
+        </motion.span>
+      </motion.button>
 
       <Popover open={open} onClose={() => setOpen(false)} triggerRef={triggerRef} align="start" aria-label="Switch repository">
         <PopoverSectionLabel>Repositories</PopoverSectionLabel>

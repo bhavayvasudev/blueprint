@@ -1,5 +1,6 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -162,6 +163,123 @@ def test_github_install_callback_with_login_purpose_token_still_rejected(
         follow_redirects=False,
     )
     assert response.status_code == 400
+
+
+def test_install_callback_auto_connects_available_repositories(
+    client: TestClient, db_session: Session, test_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Master Prompt: repositories the installation grants access to must
+    appear without a manual per-repo "Connect" step."""
+    from api.v1 import auth as auth_module
+    from integrations.repository.base import InstallationMetadata, RepositoryMetadata
+    from models.types import AccountType
+    from services import repository_connection_service as repo_service_module
+    from services.auth_service import STATE_PURPOSE_INSTALL, create_state_token
+
+    user = _create_user(db_session)
+    installation_metadata = InstallationMetadata(
+        external_id="9001", account_login="acme-corp", account_type=AccountType.ORGANIZATION
+    )
+    repo_metadata = [
+        RepositoryMetadata(
+            external_id="55", full_name="acme/widgets", default_branch="main", private=True,
+            html_url="https://github.com/acme/widgets",
+        ),
+        RepositoryMetadata(
+            external_id="56", full_name="acme/gadgets", default_branch="main", private=False,
+            html_url="https://github.com/acme/gadgets",
+        ),
+    ]
+
+    class FakeProvider:
+        provider_name = "fake"
+
+        def get_installation(self, installation_id: str) -> InstallationMetadata:
+            return installation_metadata
+
+        def list_repositories(self, installation_id: str) -> list[RepositoryMetadata]:
+            return repo_metadata
+
+        def get_repository(self, installation_id: str, full_name: str) -> RepositoryMetadata:
+            raise NotImplementedError
+
+        def get_clone_credentials(self, installation_id: str, full_name: str):
+            raise NotImplementedError
+
+    monkeypatch.setattr(auth_module, "get_repository_provider", lambda: FakeProvider())
+    monkeypatch.setattr(repo_service_module, "get_repository_provider", lambda: FakeProvider())
+
+    state = create_state_token(STATE_PURPOSE_INSTALL, settings=test_settings, subject=str(user.id))
+    response = client.get(
+        "/api/v1/auth/github/install/callback",
+        params={"state": state, "installation_id": "9001", "setup_action": "install"},
+        follow_redirects=False,
+    )
+    assert response.status_code in (302, 307)
+    location = response.headers["location"]
+    assert "installed=1" in location
+    assert "repo_sync_error" not in location
+
+    token = create_session_token(user.id, settings=test_settings)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    repos_response = client.get("/api/v1/repos")
+    assert repos_response.status_code == 200
+    full_names = {repo["full_name"] for repo in repos_response.json()}
+    assert full_names == {"acme/widgets", "acme/gadgets"}
+
+
+def test_install_callback_keeps_installation_and_flags_repo_sync_error_on_failure(
+    client: TestClient, db_session: Session, test_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transient GitHub failure while auto-connecting repos must not
+    lose the installation itself — the frontend gets a flag to offer a
+    retry (ConnectPanel's "Sync from GitHub" action) instead."""
+    from api.v1 import auth as auth_module
+    from integrations.github.exceptions import GitHubRateLimited
+    from integrations.repository.base import InstallationMetadata
+    from models.types import AccountType
+    from services import repository_connection_service as repo_service_module
+    from services.auth_service import STATE_PURPOSE_INSTALL, create_state_token
+
+    user = _create_user(db_session)
+    installation_metadata = InstallationMetadata(
+        external_id="9002", account_login="acme-corp", account_type=AccountType.ORGANIZATION
+    )
+
+    class FailingProvider:
+        provider_name = "fake"
+
+        def get_installation(self, installation_id: str) -> InstallationMetadata:
+            return installation_metadata
+
+        def list_repositories(self, installation_id: str):
+            raise GitHubRateLimited(retry_after=30)
+
+        def get_repository(self, installation_id: str, full_name: str):
+            raise NotImplementedError
+
+        def get_clone_credentials(self, installation_id: str, full_name: str):
+            raise NotImplementedError
+
+    monkeypatch.setattr(auth_module, "get_repository_provider", lambda: FailingProvider())
+    monkeypatch.setattr(repo_service_module, "get_repository_provider", lambda: FailingProvider())
+
+    state = create_state_token(STATE_PURPOSE_INSTALL, settings=test_settings, subject=str(user.id))
+    response = client.get(
+        "/api/v1/auth/github/install/callback",
+        params={"state": state, "installation_id": "9002", "setup_action": "install"},
+        follow_redirects=False,
+    )
+    assert response.status_code in (302, 307)
+    location = response.headers["location"]
+    assert "installed=1" in location
+    assert "repo_sync_error=1" in location
+
+    token = create_session_token(user.id, settings=test_settings)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    installations_response = client.get("/api/v1/installations")
+    assert installations_response.status_code == 200
+    assert len(installations_response.json()) == 1
 
 
 def test_callback_with_unknown_purpose_token_returns_400(test_settings: Settings) -> None:

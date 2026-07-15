@@ -157,6 +157,46 @@ def test_connect_repository_for_unowned_installation_returns_404(
     assert response.status_code == 404
 
 
+def test_sync_installation_connects_all_available_repositories(
+    client: TestClient,
+    db_session: Session,
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _logged_in_user(client, db_session, test_settings)
+    installation = _installation(db_session, user)
+
+    repos = [
+        RepositoryMetadata(
+            external_id=str(uuid.uuid4()), full_name="acme/widgets", default_branch="main",
+            private=True, html_url="https://github.com/acme/widgets",
+        ),
+        RepositoryMetadata(
+            external_id=str(uuid.uuid4()), full_name="acme/gadgets", default_branch="main",
+            private=False, html_url="https://github.com/acme/gadgets",
+        ),
+    ]
+    monkeypatch.setattr(service_module, "get_repository_provider", lambda: FakeRepositoryProvider(repos))
+
+    response = client.post(
+        "/api/v1/repos/sync-installation", params={"installation_id": str(installation.id)}
+    )
+    assert response.status_code == 200
+    full_names = {repo["full_name"] for repo in response.json()}
+    assert full_names == {"acme/widgets", "acme/gadgets"}
+
+    list_response = client.get("/api/v1/repos")
+    assert len(list_response.json()) == 2
+
+    # Re-running it must not raise/duplicate — already-connected repos are skipped.
+    second = client.post(
+        "/api/v1/repos/sync-installation", params={"installation_id": str(installation.id)}
+    )
+    assert second.status_code == 200
+    assert second.json() == []
+    assert len(client.get("/api/v1/repos").json()) == 2
+
+
 def test_get_repository_not_found_returns_404(
     client: TestClient, db_session: Session, test_settings: Settings
 ) -> None:

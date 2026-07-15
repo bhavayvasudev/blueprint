@@ -16,6 +16,7 @@ tightly coupled to the login callback (RULES.md §6: business logic lives
 in `services/`, not in a thin route handler).
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -28,6 +29,8 @@ from config import Settings
 from integrations.github.exceptions import InvalidOAuthState
 from integrations.github.oauth import GitHubUserProfile
 from models.repository import User
+
+logger = logging.getLogger(__name__)
 
 SESSION_TOKEN_TTL = timedelta(hours=12)
 STATE_TOKEN_TTL = timedelta(minutes=10)
@@ -113,6 +116,7 @@ def decode_state_token(token: str, *, settings: Settings) -> StateClaims:
     try:
         payload = jwt.decode(token, secret, algorithms=[_ALGORITHM])
     except jwt.PyJWTError as exc:
+        logger.warning("decode_state_token: rejected — %s", exc)
         raise InvalidOAuthState(f"State token invalid or expired: {exc}") from exc
     return StateClaims(purpose=payload["purpose"], subject=payload.get("sub"))
 
@@ -120,6 +124,9 @@ def decode_state_token(token: str, *, settings: Settings) -> StateClaims:
 def verify_state_token(token: str, *, purpose: str, settings: Settings) -> StateClaims:
     claims = decode_state_token(token, settings=settings)
     if claims.purpose != purpose:
+        logger.warning(
+            "verify_state_token: purpose mismatch — got %r, expected %r", claims.purpose, purpose
+        )
         raise InvalidOAuthState(
             f"State token was issued for purpose {claims.purpose!r}, expected {purpose!r}"
         )

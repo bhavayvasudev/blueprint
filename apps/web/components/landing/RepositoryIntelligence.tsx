@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, Float, ProportionBar, StatBlock, Surface } from "@blueprint/ui";
+import { CountUp } from "./CountUp";
 import { ScrollReveal } from "./ScrollReveal";
 
 export function RepositoryIntelligence() {
@@ -8,19 +9,23 @@ export function RepositoryIntelligence() {
     <section id="intelligence" className="relative z-10 scroll-mt-28 px-6 py-24 lg:px-12 lg:py-32">
       <div className="mx-auto max-w-5xl">
         <ScrollReveal className="mx-auto max-w-2xl text-center">
+          <span className="inline-flex items-center rounded-full bg-ink-950/5 px-3 py-1 text-xs font-medium text-ink-500 dark:bg-white/8 dark:text-ink-400">
+            Worked example
+          </span>
           <h2
-            className="text-3xl font-semibold tracking-tight text-ink-950 sm:text-4xl xl:text-5xl dark:text-ink-50"
+            className="mt-4 text-3xl font-semibold tracking-tight text-ink-950 sm:text-4xl xl:text-5xl dark:text-ink-50"
             style={{ textWrap: "balance" }}
           >
             The evidence, on its own.
           </h2>
           <p className="mt-4 text-lg leading-relaxed text-ink-500 dark:text-ink-400">
-            Every number below is a real, counted figure from the same knowledge graph the Atlas
-            draws — never a synthesized score.
+            This is the shape of a real evidence panel — every figure here is counted, never
+            synthesized, once a repository is indexed. The numbers below are a worked example, not
+            a claim about any specific repository.
           </p>
         </ScrollReveal>
 
-        <div className="mt-14 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="mt-16 grid grid-cols-2 gap-5 md:grid-cols-4">
           <ScrollReveal delay={0}>
             <Float amplitude={7} duration={7.5}>
               <Surface padding="md" className="h-full">
@@ -32,7 +37,11 @@ export function RepositoryIntelligence() {
           <ScrollReveal delay={0.06}>
             <Float amplitude={8} duration={8}>
               <Surface padding="md" className="h-full">
-                <StatBlock label="Complexity" value="6 hotspots" detail="above the cyclomatic threshold" />
+                <StatBlock
+                  label="Complexity"
+                  value={<CountUp value={6} suffix=" hotspots" />}
+                  detail="above the cyclomatic threshold"
+                />
               </Surface>
             </Float>
           </ScrollReveal>
@@ -40,7 +49,11 @@ export function RepositoryIntelligence() {
           <ScrollReveal delay={0.12}>
             <Float amplitude={6} duration={7}>
               <Surface padding="md" className="h-full">
-                <StatBlock label="Dependencies" value="247 imports" detail="across 32 packages" />
+                <StatBlock
+                  label="Dependencies"
+                  value={<CountUp value={247} suffix=" imports" />}
+                  detail="across 32 packages"
+                />
               </Surface>
             </Float>
           </ScrollReveal>
@@ -72,7 +85,11 @@ export function RepositoryIntelligence() {
           <ScrollReveal delay={0.3}>
             <Float amplitude={6} duration={7.2}>
               <Surface padding="md" className="h-full">
-                <StatBlock label="Dead code" value="12 exports" detail="unreferenced from any import" />
+                <StatBlock
+                  label="Dead code"
+                  value={<CountUp value={12} suffix=" exports" />}
+                  detail="unreferenced from any import"
+                />
               </Surface>
             </Float>
           </ScrollReveal>
@@ -80,7 +97,11 @@ export function RepositoryIntelligence() {
           <ScrollReveal delay={0.36}>
             <Float amplitude={8} duration={8.2}>
               <Surface padding="md" className="h-full">
-                <StatBlock label="Unused packages" value="4 packages" detail="declared, never imported" />
+                <StatBlock
+                  label="Unused packages"
+                  value={<CountUp value={4} suffix=" packages" />}
+                  detail="declared, never imported"
+                />
               </Surface>
             </Float>
           </ScrollReveal>

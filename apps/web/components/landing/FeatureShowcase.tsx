@@ -142,7 +142,7 @@ export function FeatureShowcase() {
         </ScrollReveal>
 
         <ScrollStagger
-          className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2"
+          className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-2"
           itemClassName=""
           stagger={0.08}
         >

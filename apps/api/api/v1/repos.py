@@ -26,6 +26,7 @@ from api.v1.schemas import (
 from models.db import get_session
 from models.repository import User
 from services.repository_connection_service import (
+    connect_all_available_repositories,
     connect_repository,
     get_connected_repository,
     list_available_repositories,
@@ -58,6 +59,21 @@ def connect(
     )
     db.commit()
     return RepositoryOut.model_validate(repository)
+
+
+@router.post("/sync-installation", response_model=list[RepositoryOut])
+def sync_installation(
+    installation_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> list[RepositoryOut]:
+    """Re-pulls everything the installation currently grants access to and
+    connects anything new. Covers repos granted after the initial install
+    (no webhook-driven sync yet — ARCHITECTURE.md §14, v1.1) and doubles as
+    the Retry action when auto-connect-on-install failed."""
+    connected = connect_all_available_repositories(db, user=user, installation_id=installation_id)
+    db.commit()
+    return [RepositoryOut.model_validate(repo) for repo in connected]
 
 
 @router.get("", response_model=list[RepositoryOut])

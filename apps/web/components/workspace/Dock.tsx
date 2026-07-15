@@ -32,7 +32,16 @@ export function Dock({
       {WORKSPACE_NAV.map((item) => {
         const href = item.action ? null : item.href(activeRepoId);
         const isActive = item.key === activeNav;
+        const isLive = isActive || Boolean(href) || Boolean(item.action);
         const Icon = item.icon;
+        const iconVariants = {
+          rest: { rotate: 0 },
+          hover: { rotate: isLive ? 6 : 0 },
+        };
+        const labelVariants = {
+          rest: { x: 0 },
+          hover: { x: isLive ? 2 : 0 },
+        };
         const inner = (
           <>
             {isActive ? (
@@ -41,9 +50,27 @@ export function Dock({
                 transition={{ type: "spring", stiffness: 380, damping: 30 }}
                 className="absolute inset-0 rounded-full bg-accent-500 shadow-lg shadow-accent-500/30"
               />
-            ) : null}
-            <Icon className="relative size-4 shrink-0" />
-            <span className="relative hidden md:inline">{item.dockLabel}</span>
+            ) : (
+              <motion.span
+                variants={{ rest: { opacity: 0 }, hover: { opacity: isLive ? 1 : 0 } }}
+                transition={{ duration: 0.18 }}
+                className="absolute inset-0 rounded-full bg-ink-950/6 dark:bg-white/8"
+              />
+            )}
+            <motion.span
+              variants={iconVariants}
+              transition={{ type: "spring", stiffness: 300, damping: 16 }}
+              className="relative flex shrink-0"
+            >
+              <Icon className="size-4" />
+            </motion.span>
+            <motion.span
+              variants={labelVariants}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="relative hidden md:inline"
+            >
+              {item.dockLabel}
+            </motion.span>
           </>
         );
         const itemClass = `relative flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
@@ -59,6 +86,8 @@ export function Dock({
             <Magnetic key={item.key} strength={0.2}>
               <motion.button
                 type="button"
+                initial="rest"
+                whileHover="hover"
                 whileTap={{ scale: 0.94 }}
                 onClick={onOpenSearch}
                 className={itemClass}
@@ -72,15 +101,26 @@ export function Dock({
         return (
           <Magnetic key={item.key} strength={0.2}>
             {href ? (
-              <motion.span whileTap={{ scale: 0.94 }} className="inline-flex">
+              <motion.span
+                initial="rest"
+                whileHover="hover"
+                whileTap={{ scale: 0.94 }}
+                className="inline-flex"
+              >
                 <Link href={href} className={itemClass}>
                   {inner}
                 </Link>
               </motion.span>
             ) : (
-              <span className={itemClass} aria-disabled title={item.unavailableHint}>
+              <motion.span
+                initial="rest"
+                whileHover="hover"
+                className={itemClass}
+                aria-disabled
+                title={item.unavailableHint}
+              >
                 {inner}
-              </span>
+              </motion.span>
             )}
           </Magnetic>
         );

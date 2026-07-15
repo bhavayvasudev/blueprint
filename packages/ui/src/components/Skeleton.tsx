@@ -23,7 +23,7 @@ export function Skeleton({ variant = "line", className = "" }: SkeletonProps) {
   return (
     <div
       aria-hidden="true"
-      className={`animate-pulse bg-ink-100 dark:bg-ink-800 ${VARIANTS[variant]} ${className}`}
+      className={`skeleton-shimmer relative overflow-hidden bg-ink-100 dark:bg-ink-800 ${VARIANTS[variant]} ${className}`}
     />
   );
 }

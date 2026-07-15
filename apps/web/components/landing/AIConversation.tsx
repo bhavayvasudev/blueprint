@@ -23,7 +23,7 @@ export function AIConversation() {
           </p>
         </ScrollReveal>
 
-        <div className="mt-14 flex flex-col gap-4">
+        <div className="mt-16 flex flex-col gap-5">
           <ScrollReveal delay={0.05}>
             <div className="ml-auto max-w-[85%] rounded-3xl rounded-br-md bg-ink-950 px-5 py-3.5 text-base text-white sm:max-w-[70%] dark:bg-white dark:text-ink-950">
               Where is authentication handled?
