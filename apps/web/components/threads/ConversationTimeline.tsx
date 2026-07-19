@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import type { RefObject } from "react";
 import type { ThreadMessage } from "@blueprint/shared-types";
 import { AssistantAnswer } from "./AssistantAnswer";
 import type { LiveAnswer } from "@/lib/use-thread-stream";
@@ -16,18 +17,32 @@ export function ConversationTimeline({
   live,
   repositoryId,
   onFollowup,
+  anchorRef,
 }: {
   messages: ThreadMessage[];
   pendingQuestion: string | null;
   live: LiveAnswer;
   repositoryId: string;
   onFollowup: (question: string) => void;
+  /** Attached to the newest question — the only thing the room ever
+   * scrolls to, so the answer beneath it is what the reader lands on. */
+  anchorRef?: RefObject<HTMLHeadingElement | null>;
 }) {
+  // The newest question owns the anchor. While a turn is streaming that's
+  // the pending one; otherwise it's the last question in the transcript.
+  const lastStoredQuestionId = pendingQuestion === null
+    ? [...messages].reverse().find((message) => message.role === "user")?.id ?? null
+    : null;
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 py-8">
       {messages.map((message) =>
         message.role === "user" ? (
-          <UserQuestion key={message.id} text={message.content} />
+          <UserQuestion
+            key={message.id}
+            text={message.content}
+            anchorRef={message.id === lastStoredQuestionId ? anchorRef : undefined}
+          />
         ) : (
           <AssistantAnswer
             key={message.id}
@@ -44,7 +59,7 @@ export function ConversationTimeline({
 
       {pendingQuestion !== null ? (
         <>
-          <UserQuestion text={pendingQuestion} />
+          <UserQuestion text={pendingQuestion} anchorRef={anchorRef} />
           <AssistantAnswer
             domPrefix="live"
             content={live.answer}
@@ -62,9 +77,16 @@ export function ConversationTimeline({
   );
 }
 
-function UserQuestion({ text }: { text: string }) {
+function UserQuestion({
+  text,
+  anchorRef,
+}: {
+  text: string;
+  anchorRef?: RefObject<HTMLHeadingElement | null>;
+}) {
   return (
     <motion.h2
+      ref={anchorRef}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}

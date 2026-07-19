@@ -2,8 +2,10 @@ import { cookies } from "next/headers";
 import type {
   ArchitectureGraph,
   AvailableRepository,
+  Contributors,
   Installation,
   Repository,
+  RepositoryStatus,
   Snapshot,
   Thread,
   User,
@@ -64,6 +66,41 @@ export async function getRepository(id: string): Promise<Repository | null> {
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GET /repos/${id} failed: ${res.status}`);
   return (await res.json()) as Repository;
+}
+
+/** Live GitHub status for a repository, or `null` when GitHub couldn't
+ * answer.
+ *
+ * Unlike every other fetcher here this one swallows its failure instead of
+ * throwing, and that is deliberate: this is the only data on the Briefing
+ * sourced from a third party that can be rate-limited, permission-scoped,
+ * or simply down. None of those are reasons to fail the whole study
+ * readout — the room's real subject is what Blueprint understood, and
+ * these numbers are context around it. A `null` means the section is
+ * omitted rather than rendered with zeroes, which would read as "this
+ * repository has no stars" when the truth is "we couldn't ask". */
+export async function getRepositoryStatus(repositoryId: string): Promise<RepositoryStatus | null> {
+  try {
+    const res = await apiFetch(`/api/v1/repos/${repositoryId}/status`);
+    if (!res.ok) return null;
+    return (await res.json()) as RepositoryStatus;
+  } catch {
+    return null;
+  }
+}
+
+/** Contributors for a repository, or `null` when GitHub couldn't answer.
+ * Same degradation contract as `getRepositoryStatus` — and note that
+ * `null` (couldn't ask) and an empty `contributors` array (asked; nobody
+ * has committed) are different answers the UI phrases differently. */
+export async function listContributors(repositoryId: string): Promise<Contributors | null> {
+  try {
+    const res = await apiFetch(`/api/v1/repos/${repositoryId}/contributors`);
+    if (!res.ok) return null;
+    return (await res.json()) as Contributors;
+  } catch {
+    return null;
+  }
 }
 
 export async function listSnapshots(repositoryId: string): Promise<Snapshot[]> {

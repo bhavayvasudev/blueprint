@@ -60,6 +60,49 @@ class RepositoryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RepositoryStatusOut(BaseModel):
+    """Live provider-side repository metadata — read on request, never
+    snapshot-scoped, because every field here changes without Blueprint
+    running anything. See `services.repository_status_service`."""
+
+    stars: int
+    forks: int
+    watchers: int
+    open_issues: int
+    primary_language: str | None
+    license_name: str | None
+    license_spdx_id: str | None
+    default_branch: str
+    private: bool
+    html_url: str
+    last_commit_sha: str | None
+    last_commit_at: datetime | None
+    last_commit_message: str | None
+    last_commit_author: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class ContributorOut(BaseModel):
+    login: str
+    avatar_url: str
+    html_url: str
+    contributions: int
+    #: Share of the commits across the contributors in this response — a
+    #: real quotient, and a share of the *listed* set when `truncated`.
+    share: float
+
+    model_config = {"from_attributes": True}
+
+
+class ContributorsOut(BaseModel):
+    contributors: list[ContributorOut]
+    total_contributions: int
+    truncated: bool
+
+    model_config = {"from_attributes": True}
+
+
 class SnapshotOut(BaseModel):
     id: uuid.UUID
     commit_sha: str | None

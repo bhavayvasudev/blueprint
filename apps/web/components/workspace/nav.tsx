@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { IconArchitecture, IconBriefing, IconInsights, IconSearch, IconThreads } from "./icons";
+import { IconArchitecture, IconBriefing, IconInsights, IconThreads } from "./icons";
 
 export interface WorkspaceNavItem {
   key: string;
@@ -8,21 +8,21 @@ export interface WorkspaceNavItem {
   dockLabel: string;
   icon: ComponentType<{ className?: string }>;
   /** null → this room is shown (the map is honest about its own
-   * territory) but not navigable right now; `unavailableHint` says why.
-   * Ignored when `action` is true. */
+   * territory) but not navigable right now; `unavailableHint` says why. */
   href: (activeRepoId: string | null) => string | null;
   unavailableHint: string;
-  /** True for the one entry that opens the command palette instead of
-   * routing anywhere — Search is a verb, not a room. */
-  action?: boolean;
 }
 
 /** The workspace's destinations: the Briefing (what does the architect
  * think?), the Atlas (what is the shape of this system?), the Threads
  * (what am I trying to find out?), and the Insights (what does the
- * evidence look like on its own?) — plus Search, which is an action,
- * not a room. One nav model drives both the top pill and the dock, so
- * the two can never disagree about what the workspace offers. */
+ * evidence look like on its own?). Rooms only.
+ *
+ * Search used to sit here too, which gave the workspace two search
+ * affordances — this dock entry and the top pill's button — that opened
+ * the same palette and so read as two different searches. Search is a
+ * verb, not a room: it has exactly one entry point now, the ⌘K button in
+ * the top pill, and the dock is purely room-to-room. */
 export const WORKSPACE_NAV: WorkspaceNavItem[] = [
   {
     key: "briefing",
@@ -58,14 +58,5 @@ export const WORKSPACE_NAV: WorkspaceNavItem[] = [
     icon: IconInsights,
     href: (repoId) => (repoId ? `/repo/${repoId}/insights` : null),
     unavailableHint: "Awaits a studied repository",
-  },
-  {
-    key: "search",
-    label: "Search",
-    dockLabel: "Search",
-    icon: IconSearch,
-    href: () => null,
-    unavailableHint: "",
-    action: true,
   },
 ];

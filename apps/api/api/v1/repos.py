@@ -15,11 +15,14 @@ from api.v1.schemas import (
     ArchitectureGraphOut,
     AvailableRepositoryOut,
     ConnectRepositoryRequest,
+    ContributorOut,
+    ContributorsOut,
     GraphEdgeOut,
     GraphNodeOut,
     KnowledgeGraphStatusOut,
     LanguageStatOut,
     RepositoryOut,
+    RepositoryStatusOut,
     SearchGroupOut,
     SearchHitOut,
     SearchResultsOut,
@@ -34,6 +37,10 @@ from services.repository_connection_service import (
     get_connected_repository,
     list_available_repositories,
     list_connected_repositories,
+)
+from services.repository_status_service import (
+    get_repository_status,
+    list_contributors,
 )
 from services.search_service import search_repository
 from services.snapshot_service import (
@@ -102,6 +109,41 @@ def get_repo(
 ) -> RepositoryOut:
     repository = get_connected_repository(db, user=user, repository_id=repository_id)
     return RepositoryOut.model_validate(repository)
+
+
+@router.get("/{repository_id}/status", response_model=RepositoryStatusOut)
+def repository_status(
+    repository_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> RepositoryStatusOut:
+    """Live provider-side metadata (stars, forks, watchers, open issues,
+    license, tip commit). Separate from `GET /repos/{id}` because that
+    returns Blueprint's own persisted row, which is deliberately free of
+    anything that goes stale between syncs — these numbers only exist as
+    of *now*, so they get their own request that the Briefing streams in
+    rather than blocking its first paint on."""
+    metadata = get_repository_status(db, user=user, repository_id=repository_id)
+    return RepositoryStatusOut.model_validate(metadata.model_dump())
+
+
+@router.get("/{repository_id}/contributors", response_model=ContributorsOut)
+def contributors(
+    repository_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> ContributorsOut:
+    """Contributors to the default branch, most commits first, with each
+    one's real share of the listed commits computed server-side (RULES.md
+    §14 — the frontend renders a ranking, it doesn't derive one)."""
+    reading = list_contributors(db, user=user, repository_id=repository_id)
+    return ContributorsOut(
+        contributors=[
+            ContributorOut.model_validate(entry.model_dump()) for entry in reading.contributors
+        ],
+        total_contributions=reading.total_contributions,
+        truncated=reading.truncated,
+    )
 
 
 @router.post("/{repository_id}/sync", response_model=SnapshotOut, status_code=202)

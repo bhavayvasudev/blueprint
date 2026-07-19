@@ -5,21 +5,24 @@ import Link from "next/link";
 import { Magnetic } from "@blueprint/ui";
 import { WORKSPACE_NAV } from "./nav";
 
-/** The floating dock — mission control's bottom rail, and now the
+/** The floating dock — mission control's bottom rail, and the
  * workspace's only room-to-room navigation surface (the top pill holds
  * context and utilities, not room links). The active room carries a
  * shared-layout accent pill that glides between items; every icon is
  * magnetic. Rooms from later phases sit in the dock (dimmed) so the
- * workspace shows its whole shape. Search is the one entry that opens
- * the palette instead of routing anywhere. */
+ * workspace shows its whole shape.
+ *
+ * Rooms only — Search is not one. It used to sit here as a fifth entry
+ * that opened the palette, which meant the workspace showed two search
+ * affordances (this one and the top pill's ⌘K button) that did the same
+ * thing and so read as two different searches. The button in the top
+ * pill is now the only one. */
 export function Dock({
   activeNav,
   activeRepoId,
-  onOpenSearch,
 }: {
   activeNav: string;
   activeRepoId: string | null;
-  onOpenSearch: () => void;
 }) {
   return (
     <motion.nav
@@ -30,9 +33,9 @@ export function Dock({
       aria-label="Workspace navigation"
     >
       {WORKSPACE_NAV.map((item) => {
-        const href = item.action ? null : item.href(activeRepoId);
+        const href = item.href(activeRepoId);
         const isActive = item.key === activeNav;
-        const isLive = isActive || Boolean(href) || Boolean(item.action);
+        const isLive = isActive || Boolean(href);
         const Icon = item.icon;
         const iconVariants = {
           rest: { rotate: 0 },
@@ -76,27 +79,10 @@ export function Dock({
         const itemClass = `relative flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
           isActive
             ? "text-white"
-            : href || item.action
+            : href
               ? "text-ink-600 hover:text-ink-950 dark:text-ink-300 dark:hover:text-ink-50"
               : "cursor-default text-ink-400 dark:text-ink-600"
         }`;
-
-        if (item.action) {
-          return (
-            <Magnetic key={item.key} strength={0.2}>
-              <motion.button
-                type="button"
-                initial="rest"
-                whileHover="hover"
-                whileTap={{ scale: 0.94 }}
-                onClick={onOpenSearch}
-                className={itemClass}
-              >
-                {inner}
-              </motion.button>
-            </Magnetic>
-          );
-        }
 
         return (
           <Magnetic key={item.key} strength={0.2}>

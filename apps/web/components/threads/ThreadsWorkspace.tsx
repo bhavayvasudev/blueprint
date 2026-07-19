@@ -40,15 +40,54 @@ export function ThreadsWorkspace({
   const { live, ask, reset } = useThreadStream();
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollToBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  // The newest question heading. Everything this room scrolls to, it
+  // scrolls to *here* — never to the bottom of the transcript.
+  const anchorRef = useRef<HTMLHeadingElement>(null);
+
+  /** Put the newest question at the top of the reading area, so the answer
+   * that follows it fills the viewport and grows downward from a fixed
+   * point. Measured as a delta between two rects rather than `offsetTop`,
+   * because the scroller isn't the anchor's offset parent. */
+  const anchorNewestQuestion = useCallback((behavior: ScrollBehavior) => {
+    const container = scrollRef.current;
+    const anchor = anchorRef.current;
+    if (!container || !anchor) return;
+    const delta = anchor.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    container.scrollTo({ top: container.scrollTop + delta - 16, behavior });
   }, []);
 
-  // Follow the conversation as it grows (new turn, streamed tokens, evidence).
+  // Exactly one automatic scroll per turn, at the moment the question is
+  // posted — and none after it.
+  //
+  // This used to follow the conversation to its bottom on every change,
+  // including `live.evidence.length`. Evidence lands *after* the prose
+  // starts streaming, so the viewport reliably ended up parked on
+  // Repository Evidence and the reader had to scroll back up to see the
+  // answer they had just asked for. Anchoring the question instead means
+  // the answer streams into an already-correct viewport: the anchor holds
+  // still, the prose grows beneath it, and evidence arriving below the
+  // fold moves nothing. After this one scroll the room never touches the
+  // user's scroll position again.
+  const anchoredTurn = useRef<string | null>(null);
   useEffect(() => {
-    scrollToBottom();
-  }, [detail?.messages.length, pendingQuestion, live.answer, live.evidence.length, scrollToBottom]);
+    if (pendingQuestion === null) {
+      anchoredTurn.current = null;
+      return;
+    }
+    if (anchoredTurn.current === pendingQuestion) return;
+    anchoredTurn.current = pendingQuestion;
+    anchorNewestQuestion("smooth");
+  }, [pendingQuestion, anchorNewestQuestion]);
+
+  // Opening a stored thread lands on its latest exchange the same way —
+  // last question at the top, its answer below. Instant, not smooth: this
+  // is where the thread *opens*, not a movement to follow.
+  const anchoredThread = useRef<string | null>(null);
+  useEffect(() => {
+    if (!detail || anchoredThread.current === detail.id) return;
+    anchoredThread.current = detail.id;
+    if (pendingQuestion === null) anchorNewestQuestion("auto");
+  }, [detail, pendingQuestion, anchorNewestQuestion]);
 
   const selectThread = useCallback(
     async (id: string) => {
@@ -56,6 +95,7 @@ export function ThreadsWorkspace({
       setPendingQuestion(null);
       setActiveId(id);
       setDetail(null);
+      anchoredThread.current = null;
       try {
         setDetail(await fetchThread(repository.id, id));
       } catch {
@@ -70,6 +110,7 @@ export function ThreadsWorkspace({
     setPendingQuestion(null);
     setActiveId(null);
     setDetail(null);
+    anchoredThread.current = null;
   }, [reset]);
 
   const runTurn = useCallback(
@@ -172,6 +213,7 @@ export function ThreadsWorkspace({
               live={live}
               repositoryId={repository.id}
               onFollowup={runTurn}
+              anchorRef={anchorRef}
             />
           ) : (
             <ThreadsEmptyState

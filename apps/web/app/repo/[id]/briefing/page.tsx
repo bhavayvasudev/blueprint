@@ -8,6 +8,8 @@ import {
   getArchitectureGraph,
   getCurrentUser,
   getRepository,
+  getRepositoryStatus,
+  listContributors,
   listRepositories,
   listSnapshots,
 } from "@/lib/api";
@@ -41,6 +43,19 @@ export default async function RepoBriefingPage(props: PageProps<"/repo/[id]/brie
   ]);
   const reading = graph ? analyzeGraph(graph, previousGraph) : null;
 
+  // Started, deliberately not awaited: these are the only two fetches on
+  // this page that leave our own infrastructure, and neither is worth
+  // delaying the study readout for. `BriefingRoom` suspends each behind
+  // its own skeleton (RULES.md §5 still holds — the route owns the fetch,
+  // it just hands the promise down instead of the resolved value).
+  // Only started when there is actually a briefing to render — a repo
+  // that has never finished a study renders the pre-study states below,
+  // and spending rate limit on a page that won't show the answer is
+  // waste, not eagerness.
+  const hasBriefing = Boolean(graph && reading && currentReady);
+  const githubStatus = hasBriefing ? getRepositoryStatus(id) : Promise.resolve(null);
+  const contributors = hasBriefing ? listContributors(id) : Promise.resolve(null);
+
   return (
     <WorkspaceShell
       user={user}
@@ -56,6 +71,8 @@ export default async function RepoBriefingPage(props: PageProps<"/repo/[id]/brie
             reading={reading}
             currentReady={currentReady}
             latest={latest}
+            githubStatus={githubStatus}
+            contributors={contributors}
           />
         ) : latest ? (
           <div className="flex max-w-xl flex-col gap-6">

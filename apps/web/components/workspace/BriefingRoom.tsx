@@ -1,8 +1,19 @@
-import type { ArchitectureGraph, Repository, Snapshot } from "@blueprint/shared-types";
+import type {
+  ArchitectureGraph,
+  Contributors,
+  Repository,
+  RepositoryStatus as GitHubStatus,
+  Snapshot,
+} from "@blueprint/shared-types";
 import { Reveal } from "@blueprint/ui";
+import { Suspense } from "react";
+import { ContributorsCard, ContributorsSkeleton } from "@/components/briefing/ContributorsCard";
 import { DetectedCard } from "@/components/briefing/DetectedCard";
 import { PresenceCard } from "@/components/briefing/PresenceCard";
-import { RepositoryStatus } from "@/components/workspace/RepositoryStatus";
+import {
+  RepositoryStatus,
+  RepositoryStatusSkeleton,
+} from "@/components/workspace/RepositoryStatus";
 import { SyncTrigger } from "@/components/SyncTrigger";
 import { timeAgo } from "@/lib/format";
 import { buildSummary, computeHealthScore, type StudyReading } from "@/lib/insights";
@@ -32,9 +43,15 @@ function countFolders(filePaths: string[]): number {
 /** The Briefing — one screen answering exactly one question: *what did
  * Blueprint understand about this repository?*
  *
- * Four things, in the order you'd want them: a paragraph of prose, the
- * repository's real status, what the study detected, and what it found
- * present versus missing. That's the whole room.
+ * Five things, in the order you'd want them: a paragraph of prose, the
+ * repository's real status, what the study detected, what it found
+ * present versus missing, and who wrote it. That's the whole room.
+ *
+ * The last of those and part of the second come from GitHub rather than
+ * from a study, and arrive as promises the route started but did not
+ * await. Each suspends behind its own skeleton, so the prose and the
+ * audit — the parts that are genuinely Blueprint's answer — paint at once
+ * regardless of how slow (or rate-limited) GitHub is being.
  *
  * What used to be here and deliberately isn't any more: the project
  * structure list and main-modules grid (the Atlas is the structural room —
@@ -50,12 +67,17 @@ export function BriefingRoom({
   reading,
   currentReady,
   latest,
+  githubStatus,
+  contributors,
 }: {
   repository: Repository;
   graph: ArchitectureGraph;
   reading: StudyReading;
   currentReady: Snapshot;
   latest: Snapshot | null;
+  /** Started by the route, deliberately not awaited — see the note above. */
+  githubStatus: Promise<GitHubStatus | null>;
+  contributors: Promise<Contributors | null>;
 }) {
   const filePaths = collectFilePaths(graph);
   const docAudit = graph.snapshot.doc_audit;
@@ -109,17 +131,20 @@ export function BriefingRoom({
         </Reveal>
 
         <Reveal delay={0.14} distance={14}>
-          <RepositoryStatus
-            repository={repository}
-            fileCount={graph.file_count}
-            folderCount={countFolders(filePaths)}
-            moduleCount={reading.modules.length}
-            languages={languages}
-            lastIndexedIso={currentReady.created_at}
-            commitSha={currentReady.commit_sha}
-            healthScore={health.score}
-            licenseDetected={licenseDetected}
-          />
+          <Suspense fallback={<RepositoryStatusSkeleton />}>
+            <RepositoryStatus
+              repository={repository}
+              github={githubStatus}
+              fileCount={graph.file_count}
+              folderCount={countFolders(filePaths)}
+              moduleCount={reading.modules.length}
+              languages={languages}
+              lastIndexedIso={currentReady.created_at}
+              commitSha={currentReady.commit_sha}
+              healthScore={health.score}
+              licenseDetected={licenseDetected}
+            />
+          </Suspense>
         </Reveal>
       </header>
 
@@ -130,6 +155,12 @@ export function BriefingRoom({
       <Reveal delay={0.26} distance={16} className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <PresenceCard audit={docAudit} variant="present" />
         <PresenceCard audit={docAudit} variant="missing" />
+      </Reveal>
+
+      <Reveal delay={0.32} distance={16}>
+        <Suspense fallback={<ContributorsSkeleton />}>
+          <ContributorsCard data={contributors} />
+        </Suspense>
       </Reveal>
     </>
   );

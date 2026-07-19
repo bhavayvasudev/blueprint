@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { Reveal } from "@blueprint/ui";
-import { AtlasGraph } from "@/components/atlas/AtlasGraph";
+import { RepositoryExplorer } from "@/components/atlas/RepositoryExplorer";
+import { StatsForNerdsSection } from "@/components/atlas/StatsForNerdsSection";
+import { StatsForNerdsToggle } from "@/components/atlas/StatsForNerdsToggle";
 import { ModuleGraph } from "@/components/architecture/ModuleGraph";
 import { RepositoryStructure } from "@/components/architecture/RepositoryStructure";
 import { SectionRule } from "@/components/study/SectionRule";
@@ -22,11 +24,24 @@ import { analyzeGraph } from "@/lib/insights";
  * folder tree, and the module graph as text. Nothing executive belongs
  * on this page — the summary, the tech stack, the status, the suggested
  * improvements all live in the Briefing (PRODUCT.md room separation; the
- * brief's central fix was pulling these two rooms apart). The graph
- * leads now instead of hiding behind a "Stats for nerds" gate: this is
- * Google Maps for the codebase, so it opens on the map. Every module in
- * it is clickable, and the module index below the canvas is the same
- * information as text (RULES.md §16). */
+ * brief's central fix was pulling these two rooms apart).
+ *
+ * The room is two permanent panes: an explorer on the left (the
+ * repository as a place you expand, closer to the VS Code sidebar than
+ * to a graph visualizer) and the complete architecture map on the right.
+ *
+ * The map used to be what *selecting a module returned*, which buried
+ * one of Blueprint's signature visualizations behind a click and left an
+ * empty detail card where the architecture should have been. It is now
+ * always drawn, at full panel height, showing the whole repository until
+ * a selection narrows the emphasis. The two panes share one selection in
+ * both directions.
+ *
+ * The visual map is not a nerd feature. What stays behind the "Stats for
+ * nerds" gate is the raw material: the whole import web as text and the
+ * flat module inventory. The selected module's own imports and dependents
+ * read as text in the map's overlay, which is the RULES.md §16
+ * equivalent. */
 export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
   const user = await getCurrentUser();
   if (!user) {
@@ -62,7 +77,7 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
       activeNav="atlas"
       activeRepoId={repository.id}
     >
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-12 px-6 pb-10 pt-28 xl:px-8 xl:pt-24">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-12 px-6 pb-10 pt-28 xl:px-8 xl:pt-24">
         <header className="flex flex-col gap-6">
           <Reveal distance={14}>
             <div className="flex flex-wrap items-baseline justify-between gap-4">
@@ -75,7 +90,10 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
                   {repository.default_branch} · {repository.private ? "private" : "public"}
                 </span>
               </p>
-              <SyncTrigger repositoryId={repository.id} initialSnapshot={latestSnapshot} />
+              <div className="flex items-center gap-4">
+                {architectureGraph ? <StatsForNerdsToggle /> : null}
+                <SyncTrigger repositoryId={repository.id} initialSnapshot={latestSnapshot} />
+              </div>
             </div>
           </Reveal>
 
@@ -107,33 +125,36 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
 
         {architectureGraph && reading ? (
           <>
-            {/* The map leads. The constellation is the hero of this room —
-                deterministic orbital layout, every module clickable into
-                its imports and dependents. */}
-            <section className="flex flex-col gap-5">
-              <SectionRule>Architecture</SectionRule>
-              <Reveal delay={0.05} distance={20}>
-                <AtlasGraph
-                  key={focus ?? "default"}
-                  modules={reading.modules}
-                  keystoneId={reading.keystoneId}
-                  initialFocusId={focus}
-                />
-              </Reveal>
-            </section>
-
-            <section className="flex flex-col gap-5">
-              <SectionRule>Folder tree</SectionRule>
-              <RepositoryStructure filePaths={filePaths} />
-            </section>
-
-            <section className="flex flex-col gap-5">
-              <SectionRule>The same sky, as text</SectionRule>
-              <ModuleGraph
-                nodes={architectureGraph.repository_graph_nodes}
-                edges={architectureGraph.repository_graph_edges}
+            {/* Structure and architecture, side by side and permanently
+                on screen: the explorer names the repository as a place,
+                the map draws it as a system. Neither is a reward for
+                clicking the other — selecting in the tree focuses the
+                map, it does not summon it. Both panes label themselves,
+                so no section rule sits above them repeating it. */}
+            <Reveal delay={0.05} distance={20}>
+              <RepositoryExplorer
+                repositoryId={repository.id}
+                filePaths={filePaths}
+                modules={reading.modules}
+                keystoneId={reading.keystoneId}
+                initialFocusId={focus}
               />
-            </section>
+            </Reveal>
+
+            {/* The raw inventory — the whole import graph as text, all
+                modules at once. Behind the existing toggle rather than on
+                the landing view, since the selected module's own imports
+                and dependents already read as text beside the graph. */}
+            <StatsForNerdsSection>
+              <section className="flex flex-col gap-5">
+                <SectionRule>Every module, as text</SectionRule>
+                <RepositoryStructure filePaths={filePaths} />
+                <ModuleGraph
+                  nodes={architectureGraph.repository_graph_nodes}
+                  edges={architectureGraph.repository_graph_edges}
+                />
+              </section>
+            </StatsForNerdsSection>
           </>
         ) : latestSnapshot ? (
           <div className="flex max-w-xl flex-col gap-6">

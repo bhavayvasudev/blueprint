@@ -401,3 +401,75 @@ Server-side grouping (rather than fetching an index to the client) follows RULES
 **Status:** Accepted.
 
 **Future reconsideration:** if repositories get large enough that `ILIKE '%needle%'` stops being instant, the first move is a trigram (`pg_trgm`) GIN index on `files.path` and `code_chunks.symbol_name` — same datastore, no new dependency — before any dedicated search engine is considered. If users repeatedly type conceptual queries into the palette (worth measuring), the right answer is likely a "ask Threads about this" affordance in the empty state, not bolting vector search onto this path.
+
+---
+
+### ADR-027 — Live GitHub repository metadata is read per request, never snapshot-scoped
+
+**Decision:** stars, forks, watchers, open issues, primary language, license, tip commit, and the contributor list are served by two new endpoints — `GET /repos/{id}/status` and `GET /repos/{id}/contributors` — backed by `services/repository_status_service.py` and two new `RepositoryProvider` methods (`get_repository_status`, `list_contributors`). None of it is persisted. The Briefing renders it alongside study-derived facts in the same chip row, and the route starts both fetches without awaiting them, handing the promises to `BriefingRoom`, which suspends each behind its own skeleton.
+
+**Reason:** every other number Blueprint displays is snapshot-scoped and immutable (`ARCHITECTURE.md` §2) because it was computed from a specific commit and stays true for that commit forever. These are the opposite: they change while Blueprint is doing nothing. Writing them to a `repo_snapshots` column would create a row that is stale the moment it lands and would then be indistinguishable, at read time, from the deterministic facts around it — the worst possible failure for a product whose whole claim is that its numbers are earned. Reading them live keeps the provenance boundary legible: persisted means computed by a study, fetched means true as of now.
+
+Streaming them rather than awaiting them follows from the same reasoning. The Briefing's actual subject is what Blueprint understood; GitHub is context around it. A rate-limited or slow third party must not delay the study readout, so each GitHub-sourced region suspends alone. `RULES.md` §5 still holds — the route owns the fetch, it just passes the promise instead of the resolved value.
+
+**Reason it is not `RULES.md` §23 scope creep:** §23 bans features whose *primary value* is a metric GitHub already shows. These are not the feature; they are attribution and freshness context on a page whose primary value is Blueprint's own read. The test applied was "does removing this leave the Briefing saying the same thing?" — without contributors, the Briefing describes a repository with no account of who built it, which is a real gap in an executive summary, not a chart for its own sake.
+
+**Alternatives considered:** persisting the numbers on `repo_snapshots` (rejected — see above; also makes every re-read of an old snapshot a lie about the present); a single combined `/github` endpoint (rejected — contributors is the slower call and the larger payload, and coupling them means the status row waits on it for no reason); fetching client-side after hydration (rejected — pushes the session cookie forwarding and error taxonomy into the browser, and duplicates the typed-exception mapping `api/errors.py` already owns).
+
+**Tradeoffs accepted:** two extra GitHub calls per Briefing load against the installation's rate limit, with no caching layer beyond the provider's HTTP client — acceptable at current scale, and the first thing to revisit if rate limiting shows up in practice. Contributor "last contribution date" is **not** shown: GitHub's contributors endpoint carries no date, and `/stats/contributors`, which does, is computed asynchronously and answers 202 while it warms. A column that is sometimes a date and sometimes a dash is worse than no column, and inferring one would be exactly the fabricated number §23 bans. The contributor list is capped at 30 (one page, provider-ordered by commit count), and the response carries `truncated` so the UI states that percentages are shares of the listed set rather than of the whole history.
+
+**Status:** Accepted.
+
+**Future reconsideration:** if rate limiting bites, the fix is a short-TTL cache in `integrations/` keyed by installation + repository — not persistence, which would reintroduce the staleness problem this ADR exists to avoid. If `/stats/contributors` is ever worth the 202-polling complexity, a real last-contribution date can be added additively without changing either endpoint's existing shape.
+
+---
+
+### ADR-028 — The Atlas draws the whole architecture unconditionally; selection focuses it, never summons it
+
+**Decision:** the Atlas room is two permanent panes. Left is the file explorer (`components/atlas/RepositoryExplorer.tsx`), unchanged. Right is `AtlasGraph`, which now renders the **complete** repository graph — every module, every import edge — at full panel height, from first paint, with no selection required. Selection is a controlled prop rather than internal state: choosing a folder lights that boundary and its one-hop neighbourhood, fades the rest, and eases the viewport onto the region via three springs. Nothing is unmounted, filtered out, or replaced. A container folder such as `apps/` lights every boundary beneath it, so the graph is its own chooser and the previous `ContainerPane` card is gone, along with `ModulePane` and `EmptyPane`. The selection is bidirectional — clicking a node moves the tree, clicking the tree moves the map. The canvas is an instrument: drag to pan, wheel or controls to zoom, hover to trace strands without committing.
+
+**Reason:** the Atlas originally opened on the constellation, which put implementation detail on screen before anyone asked for it; the correction was to lead with structure and make the graph a consequence of a click. That correction over-shot. It bought the right landing view at the cost of hiding one of Blueprint's signature visualizations behind an interaction nobody was prompted to perform, and it left an empty detail card sitting where the architecture should have been — the right pane's default state was a sentence apologising for its own emptiness. The explorer was never what was wrong with the old room; leading with *implementation detail* was. A complete architecture map is not implementation detail — it is the single clearest statement of what the repository is, and it belongs on screen for the same reason the file tree does.
+
+Keeping one scene and re-weighting it, rather than swapping scenes, is the substance of the decision. The layout is already deterministic (keystone at centre, ring = real graph distance), so a module's dependency graph and the repository's graph are *the same drawing at different emphasis*. Animating opacity and viewport across that shared layout means the selected module is legibly a region of the system, and the reader never loses their place. Replacing the pane would have thrown away the spatial memory the deterministic layout exists to build.
+
+**Reason the visual map is not behind "Stats for nerds":** that gate holds raw material — the flat module inventory and the whole import web as text. A picture that answers "what shape is this system" in one glance is the opposite of a power-user affordance. What stays gated is unchanged.
+
+**Alternatives considered:** restoring the pre-explorer landing page (rejected outright — it is the design the explorer correctly replaced, and the brief that prompted this asked specifically not to); rendering the graph as a card inside the detail pane (rejected — a small canvas of a 40-module graph is unreadable, and the panel exists to be filled); leaving the aside beside the canvas as before (rejected — a 19rem text column takes a fifth of the stage from the thing it annotates, so the module reading is now a floating overlay on the map, which preserves the RULES.md §16 text equivalent without costing the graph its width); computing a filtered subgraph per selection (rejected — this is the "replace everything instantly" failure, and it discards the stable layout).
+
+**Tradeoffs accepted:** pan/zoom state lives in framer-motion springs rather than React state specifically so a drag doesn't re-render every node per frame — the zoom readout is a `useTransform` over the spring for the same reason. The viewport auto-frames on selection, which is motion the user didn't directly request; it is bounded to selection only (hover never moves the canvas, because a stage that lurches under a passing pointer is unusable) and is fully undone by the "Whole repository" control or a click on empty space. Wheel-over-map zooms rather than scrolling the page, which is a map convention but does cost page scroll within the panel's bounds; below `xl` the SVG is `touch-pan-y` so a phone can still scroll past a full-height map. Pointer-to-viewBox mapping has to undo `preserveAspectRatio="xMidYMid meet"` letterboxing by hand, since the panel is never exactly 880:600.
+
+**Status:** Accepted.
+
+**Future reconsideration:** the deterministic orbital layout is legible to roughly the module counts seen so far; if a repository produces enough boundaries that rings collide, the answer is hierarchical collapse (fold a container's boundaries into one node until it is selected) rather than a force-directed layout, which would forfeit the stable-across-visits property this layout is chosen for.
+
+---
+
+### ADR-029 — Exactly one search surface, and it is the ⌘K palette
+
+**Decision:** Search is removed from `WORKSPACE_NAV` and from the dock. The only search affordance in the product is the top pill's button, which — like ⌘K itself — flips the single `paletteOpen` bit in `WorkspaceShell` and renders the single `WorkspaceCommandPalette`. The dock is now rooms only, and `WorkspaceNavItem` loses its `action` escape hatch, so the nav model can no longer express "an entry that isn't a destination."
+
+**Reason:** the two entry points were already one implementation, one component, and one piece of state — but users do not read source. Two differently-shaped search controls, in two different pieces of chrome, on every screen, is indistinguishable from two search features, and the cost is paid on every glance: *which one is the one I want?* The nav model's own comment said Search "is an action, not a room" while listing it among the rooms, which is the contradiction the UI was faithfully rendering.
+
+The top pill keeps it because that is where the shortcut hint already lived and where utilities (notifications, theme, account) already live; the dock is for navigation, and search is not navigation until you have typed something.
+
+**Alternatives considered:** keeping the dock entry and dropping the top-pill button (rejected — the button is where the ⌘K affordance is discoverable, and the dock is the one surface whose job statement is rooms); keeping both and visually differentiating them (rejected — this treats a duplicate-concept problem as a styling problem); a dedicated `/search` route (rejected, and none existed — a route would make search a place, which is the framing this ADR removes).
+
+**Tradeoffs accepted:** the top-pill button collapses to an icon below `md`, so on a phone the affordance is smaller than the dock entry was. That is the correct trade — one small control beats two competing ones — and the palette itself is unchanged and full-screen when opened.
+
+**Status:** Accepted.
+
+---
+
+### ADR-030 — In Threads, the answer is anchored and evidence is folded
+
+**Decision:** the Threads transcript auto-scrolls **once per turn**, at the moment the question is posted, and it scrolls to the *question heading*, not to the bottom. After that the room never touches scroll position again. `Repository Evidence` renders collapsed by default behind a disclosure; a `[n]` marker in the prose expands it and jumps to the cited card.
+
+**Reason:** the previous effect followed the conversation to its bottom on every change, and its dependency list included `live.evidence.length`. Evidence lands *after* the prose begins streaming, so the last automatic scroll of every turn reliably parked the viewport on the evidence grid — the reader had to scroll back up to read the answer they had just asked for. Anchoring the question instead makes the correct viewport a consequence of one deliberate movement: the heading holds still, the answer streams downward into the space beneath it, and anything arriving below the fold moves nothing. "Keep the answer anchored while it streams" turns out to require *no* continuous scrolling, only the right one-time target.
+
+Folding evidence follows the same hierarchy from the other direction. PRODUCT.md's rule is interpretation above evidence, with evidence always present and one click from the claim — a permanently expanded grid of source cards under every turn satisfies "present" while inverting "above." Collapsed-by-default satisfies both, and has the useful property that evidence growing after citations resolve cannot change layout the reader is looking at.
+
+**Alternatives considered:** scroll-anchoring the container via `overflow-anchor` (rejected — browser support for the property is uneven and it addresses content growing *above* the viewport, which is not this bug); keeping the follow-to-bottom behaviour but excluding `evidence.length` from the deps (rejected — it fixes this instance and leaves the room fighting the user's scroll on every token); pinning the answer with `position: sticky` (rejected — an answer of arbitrary length cannot stick, and the question heading is the stable thing worth pinning anyway).
+
+**Tradeoffs accepted:** opening a stored thread lands on its latest exchange rather than its top, which is a second automatic scroll — it is instant rather than smooth, fires once per thread, and is where the thread *opens* rather than a movement to follow. Readers who want evidence visible must expand it per answer; there is no persisted preference, which is worth adding if the expand becomes reflexive.
+
+**Status:** Accepted.

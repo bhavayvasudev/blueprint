@@ -20,10 +20,15 @@ export type WorkspaceDialogKind = "account" | "appearance" | "shortcuts" | null;
  * There is no side rail — the workspace has exactly two pieces of
  * chrome, both floating, both reachable with one hand. This shell also
  * owns the ⌘K palette and the three account dialogs, since the top
- * pill's profile menu, the dock's Search entry, and the palette itself
- * all need to open the same layer. Server pages fetch data and render
+ * pill's search button, its profile menu, and the palette itself all
+ * need to open the same layer. Server pages fetch data and render
  * inside this shell; the shell is pure composition plus that one slice
- * of interaction state. */
+ * of interaction state.
+ *
+ * Search has exactly one entry point in the whole product: the top
+ * pill's button and ⌘K both flip the single `paletteOpen` bit below,
+ * rendering the single `WorkspaceCommandPalette`. Nothing else in the
+ * workspace opens a search surface. */
 export function WorkspaceShell({
   user,
   repositories,
@@ -66,7 +71,7 @@ export function WorkspaceShell({
         onOpenDialog={setDialog}
       />
       <main className="relative z-10 pb-32">{children}</main>
-      <Dock activeNav={activeNav} activeRepoId={activeRepoId} onOpenSearch={openSearch} />
+      <Dock activeNav={activeNav} activeRepoId={activeRepoId} />
 
       <WorkspaceCommandPalette
         open={paletteOpen}

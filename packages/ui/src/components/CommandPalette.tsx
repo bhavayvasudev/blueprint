@@ -234,12 +234,31 @@ export function CommandPalette({
                         aria-selected={isActive}
                         onPointerMove={() => setActiveIndex(flat.indexOf(command))}
                         onClick={() => run(command)}
-                        className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors ${
+                        /* `isolate` gives the row its own stacking context so
+                           the highlight's `-z-10` stays behind the row's text
+                           and not behind the palette itself. */
+                        className={`relative isolate flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
                           isActive
-                            ? "bg-accent-50 text-ink-950 dark:bg-accent-700/20 dark:text-ink-50"
+                            ? "text-ink-950 dark:text-ink-50"
                             : "text-ink-700 dark:text-ink-300"
                         }`}
                       >
+                        {/* The selection itself is one element that glides
+                            between rows on a shared `layoutId`, rather than a
+                            background class switching off one row and on
+                            another. Arrowing down then reads as moving a
+                            selection, which is what's actually happening —
+                            the Raycast/Linear detail. Under
+                            `prefers-reduced-motion` it becomes a plain
+                            per-row background with no travel. */}
+                        {isActive && (
+                          <motion.span
+                            aria-hidden
+                            layoutId={reduceMotion ? undefined : `${baseId}-active`}
+                            transition={{ type: "spring", stiffness: 620, damping: 44, mass: 0.5 }}
+                            className="absolute inset-0 -z-10 rounded-md bg-accent-50 dark:bg-accent-700/20"
+                          />
+                        )}
                         {command.icon && (
                           <span className="text-ink-500 dark:text-ink-400" aria-hidden="true">
                             {command.icon}

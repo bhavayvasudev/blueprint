@@ -10,6 +10,8 @@ import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
   getArchitectureGraph,
   getCurrentUser,
+  getRepositoryStatus,
+  listContributors,
   listInstallations,
   listRepositories,
   listSnapshots,
@@ -57,6 +59,16 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
     : [null, null];
   const reading = graph ? analyzeGraph(graph, previousGraph) : null;
 
+  // Started, not awaited — `BriefingRoom` suspends each behind its own
+  // skeleton so a slow GitHub never holds up the home briefing. Only
+  // started when a briefing will actually render; otherwise the page
+  // shows `PreStudyBriefing` and the calls would be spent rate limit.
+  const hasBriefing = Boolean(repository && graph && reading && currentReady);
+  const githubStatus =
+    hasBriefing && repository ? getRepositoryStatus(repository.id) : Promise.resolve(null);
+  const contributors =
+    hasBriefing && repository ? listContributors(repository.id) : Promise.resolve(null);
+
   return (
     <WorkspaceShell
       user={user}
@@ -73,6 +85,8 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
               reading={reading}
               currentReady={currentReady}
               latest={latest}
+              githubStatus={githubStatus}
+              contributors={contributors}
             />
           ) : (
             <PreStudyBriefing repository={repository} latest={latest} />

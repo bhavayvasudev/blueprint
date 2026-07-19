@@ -86,6 +86,58 @@ export interface Repository {
   last_synced_at: string | null;
 }
 
+/** Live GitHub-side facts about a repository — the numbers that change
+ * while Blueprint is doing nothing, so they're read per request rather
+ * than persisted against a study. Every field is reported as GitHub gave
+ * it: a repository with no declared license has `license_name: null`, not
+ * a stand-in string, and one with no commits yet has a null tip commit.
+ * Mirrors `RepositoryStatusOut`. */
+export interface RepositoryStatus {
+  stars: number;
+  forks: number;
+  /** Accounts subscribed to notifications — GitHub's `subscribers_count`.
+   * Its `watchers_count` field is a legacy alias for the star count and is
+   * deliberately not what this carries. */
+  watchers: number;
+  /** GitHub folds open pull requests into this count and offers no
+   * issues-only number on the repository endpoint; the label matches
+   * GitHub's own wording rather than implying a precision it lacks. */
+  open_issues: number;
+  primary_language: string | null;
+  license_name: string | null;
+  license_spdx_id: string | null;
+  default_branch: string;
+  private: boolean;
+  html_url: string;
+  last_commit_sha: string | null;
+  last_commit_at: string | null;
+  last_commit_message: string | null;
+  last_commit_author: string | null;
+}
+
+/** One contributor, with their real share of the commits in this
+ * response. Mirrors `ContributorOut`. There is no last-contribution date:
+ * GitHub's contributors endpoint doesn't carry one, and the statistics
+ * endpoint that does is computed asynchronously — so the field is absent
+ * rather than guessed. */
+export interface Contributor {
+  login: string;
+  avatar_url: string;
+  html_url: string;
+  contributions: number;
+  /** 0–1. A share of the *listed* contributors when `truncated` is set. */
+  share: number;
+}
+
+export interface Contributors {
+  contributors: Contributor[];
+  total_contributions: number;
+  /** The list was capped, so `share` covers the listed set rather than the
+   * repository's whole history — the UI says so instead of implying
+   * otherwise. */
+  truncated: boolean;
+}
+
 export interface Snapshot {
   id: string;
   commit_sha: string | null;
