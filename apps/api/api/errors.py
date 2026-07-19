@@ -24,6 +24,7 @@ from services.auth_service import SessionConfigError
 from services.installation_service import InstallationNotFound
 from services.repository_connection_service import RepositoryAlreadyConnected, RepositoryNotFound
 from services.snapshot_service import SnapshotNotFound
+from services.thread_service import ThreadNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(InstallationNotFound)
     @app.exception_handler(RepositoryNotFound)
     @app.exception_handler(SnapshotNotFound)
+    @app.exception_handler(ThreadNotFound)
     def _not_found(request: Request, exc: Exception) -> JSONResponse:
         logger.warning("%s %s -> 404: %s", request.method, request.url.path, exc)
         return JSONResponse(status_code=404, content={"detail": str(exc)})

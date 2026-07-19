@@ -173,6 +173,16 @@ export function IconClock({ className }: IconProps) {
   );
 }
 
+export function IconWarning({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M12 4 2.8 19.5h18.4L12 4Z" />
+      <path d="M12 10.2v4" />
+      <path d="M12 16.9v.1" />
+    </svg>
+  );
+}
+
 export function IconMore({ className }: IconProps) {
   return (
     <svg {...base(className)} fill="currentColor" stroke="none">
@@ -269,6 +279,48 @@ export function IconCommand({ className }: IconProps) {
   );
 }
 
+export function IconPin({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M9 4.5h6l-1 5 3 3v1.5H7V12.5l3-3-1-5Z" />
+      <path d="M12 15v4.5" />
+    </svg>
+  );
+}
+
+export function IconFile({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M6 3.5h7l5 5v12a0 0 0 0 1 0 0H6a0 0 0 0 1 0 0V3.5Z" />
+      <path d="M13 3.5V8.5h5" />
+    </svg>
+  );
+}
+
+export function IconSymbol({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M9 5.5 5.5 12 9 18.5M15 5.5 18.5 12 15 18.5" />
+    </svg>
+  );
+}
+
+export function IconTrash({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M5 6.5h14M9.5 6.5V4.5h5v2M7 6.5l1 13h8l1-13" />
+    </svg>
+  );
+}
+
+export function IconArrowUp({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M12 19.5v-15M6 10.5l6-6 6 6" />
+    </svg>
+  );
+}
+
 /** The Blueprint mark — a "B" set in a rounded plate, used at every
  * scale from favicon-size to the sidebar wordmark. */
 export function BlueprintMark({ className, size }: IconProps & { size?: number }) {
@@ -289,6 +341,51 @@ export function BlueprintMark({ className, size }: IconProps & { size?: number }
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+export function IconFolder({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M3.5 6.5a1 1 0 0 1 1-1h4.3l2 2.5h7.7a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1v-12Z" />
+    </svg>
+  );
+}
+
+export function IconFunction({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M7.5 20.5c2 0 2.5-1.5 2.8-4l1.4-9c.3-2.5.8-4 2.8-4" />
+      <path d="M7 11.5h8" />
+    </svg>
+  );
+}
+
+export function IconClass({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="M4 9.5h16M9.5 9.5V20" />
+    </svg>
+  );
+}
+
+export function IconRoute({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="6" cy="6.5" r="2.5" />
+      <circle cx="18" cy="17.5" r="2.5" />
+      <path d="M8.5 6.5h5.5a3.5 3.5 0 0 1 0 7h-4a3.5 3.5 0 0 0 0 7h5.5" />
+    </svg>
+  );
+}
+
+export function IconDoc({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M6 3.5h12v17H6z" />
+      <path d="M9 8h6M9 12h6M9 16h3.5" />
     </svg>
   );
 }

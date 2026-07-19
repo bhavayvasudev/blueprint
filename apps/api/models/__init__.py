@@ -14,6 +14,7 @@ from models.db import Base
 from models.graph import GraphEdge, GraphNode
 from models.installation import Installation
 from models.repository import File, Repository, RepoSnapshot, User
+from models.thread import Thread, ThreadMessage
 
 __all__ = [
     "Base",
@@ -26,4 +27,6 @@ __all__ = [
     "DocChunk",
     "GraphNode",
     "GraphEdge",
+    "Thread",
+    "ThreadMessage",
 ]

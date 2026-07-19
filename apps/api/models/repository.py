@@ -5,11 +5,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.db import Base
-from models.types import ConnectionStatus, SnapshotStatus, StructuralConfidence
+from models.types import ConnectionStatus, PipelineStage, SnapshotStatus, StructuralConfidence
 
 if TYPE_CHECKING:
     from models.installation import Installation
@@ -67,6 +67,53 @@ class RepoSnapshot(Base):
     commit_sha: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     status: Mapped[SnapshotStatus] = mapped_column(String, default=SnapshotStatus.INDEXING)
+    # The remaining columns exist so a stuck/slow/crashed job is diagnosable
+    # from the outside (frontend polling, `psql`) instead of an opaque
+    # `indexing` with no further signal — see `models.types.PipelineStage`
+    # and `services/pipeline_runner.py`. All nullable/additive; only ever
+    # meaningful while `status == indexing` (current_stage/stage_started_at
+    # are cleared on both READY and FAILED).
+    current_stage: Mapped[PipelineStage | None] = mapped_column(String, nullable=True)
+    stage_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Real, directly-counted numbers only (RULES.md §23: no fabricated
+    # percentages) — files discovered, symbols parsed, graph node/edge
+    # counts, filled in as each real stage actually completes.
+    progress: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
+    # Set once, when the terminal `status` is reached (READY or FAILED) —
+    # the input to `snapshot_service`'s historical-duration ETA estimate,
+    # which is real elapsed time from past runs, never a fabricated
+    # countdown (RULES.md §23).
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # `pipeline.ingestion.stack_detection`/`route_detection`/`doc_audit`'s
+    # output — real, directly-computed detections (manifest dependency
+    # names, regex route matches, filesystem presence checks), never
+    # LLM-generated. Shapes documented in those modules; nullable/additive
+    # like every other progress column here.
+    detected_stack: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    api_routes: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    doc_audit: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # The precomputed Repository Manifest (`pipeline/ingestion/manifest.py`) —
+    # a real "knowledge card" (verbatim README sections, tech stack,
+    # entrypoints, module rollup, route count) assembled from the detections
+    # above plus a README parse. The first-class evidence source for
+    # repository-level Threads questions (`services/thread_retrieval.py`,
+    # OVERVIEW/ARCHITECTURE intents). Additive/nullable like its inputs.
+    manifest: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # Stage 4's real outcome: how many code/doc chunks were embedded, whether
+    # the README specifically made it in, which provider/model produced the
+    # vectors, and the verbatim error if the pass failed or was skipped.
+    #
+    # This column exists because Threads answering "I couldn't retrieve
+    # repository context" was, for a long time, the *only* externally visible
+    # symptom of an entire pipeline stage never having run — indistinguishable
+    # from a question that genuinely had no answer in the repository. Retrieval
+    # reads this to report which of those two it is
+    # (`services/thread_retrieval.diagnose_retrieval`). NULL means the snapshot
+    # predates Stage 4 being wired in, which is itself a real, reportable
+    # reason — not an unknown. Shape documented in
+    # `services/pipeline_runner._index_chunks`.
+    index_status: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     repository: Mapped["Repository"] = relationship(back_populates="snapshots")
     files: Mapped[list["File"]] = relationship(back_populates="snapshot")

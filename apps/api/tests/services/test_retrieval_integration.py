@@ -99,8 +99,14 @@ def test_graph_expansion_surfaces_imported_file(db_session: Session, snapshot: R
     provider = LocalHashEmbeddingProvider()
     _index_fixture_repo(db_session, snapshot, provider)
 
+    # Scoped to this snapshot: `db_session` binds to the real configured
+    # Postgres when one is reachable, so an unscoped symbol lookup also
+    # matches chunks left behind by any other snapshot in that database —
+    # the fixture repo's symbol names are not unique across snapshots.
     use_helper_chunk = db_session.execute(
-        select(CodeChunk).where(CodeChunk.symbol_name == "use_helper")
+        select(CodeChunk)
+        .join(File, File.id == CodeChunk.file_id)
+        .where(CodeChunk.symbol_name == "use_helper", File.snapshot_id == snapshot.id)
     ).scalar_one()
     helper_file_id = db_session.execute(
         select(File.id).where(File.path == "utils/helper.py", File.snapshot_id == snapshot.id)

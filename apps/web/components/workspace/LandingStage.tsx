@@ -47,8 +47,6 @@ const HERO_MODULES: ModuleFacts[] = [
   { id: "workspace-ui", label: "Workspace UI", nodeType: "package", fileCount: 63, dependsOn: [{ id: "briefing", label: "Briefing" }, { id: "insights", label: "Insights" }], dependedOnBy: [], inCycle: false, ring: 2 },
 ];
 
-const HERO_BRIEFING_EXCERPT =
-  "This repository is a knowledge graph engine with a Next.js workspace, organized around a single keystone module that every room — Briefing, Atlas, Insights, Threads — reads from.";
 
 /** Signed-out Blueprint: a full-length premium landing page, not a
  * one-screen hero. The hero keeps its established asymmetric
@@ -163,7 +161,7 @@ export function LandingStage({ signInHref }: { signInHref: string }) {
                 className="absolute left-1/2 top-[460px] z-10 w-[280px] -translate-x-1/2 -rotate-1"
                 style={{ scale: 0.97 }}
               >
-                <AIBriefingCard excerpt={HERO_BRIEFING_EXCERPT} hasMore />
+                <AIBriefingCard claimCount={9} measuredCount={6} likelyCount={3} undeterminedCount={0} />
               </div>
             </div>
           </Tilt>

@@ -20,6 +20,9 @@ from api.v1.schemas import (
     KnowledgeGraphStatusOut,
     LanguageStatOut,
     RepositoryOut,
+    SearchGroupOut,
+    SearchHitOut,
+    SearchResultsOut,
     SnapshotOut,
     TreeSitterStatusOut,
 )
@@ -32,7 +35,13 @@ from services.repository_connection_service import (
     list_available_repositories,
     list_connected_repositories,
 )
-from services.snapshot_service import get_architecture_graph, get_snapshot, list_snapshots
+from services.search_service import search_repository
+from services.snapshot_service import (
+    get_architecture_graph,
+    get_snapshot,
+    latest_ready_snapshot,
+    list_snapshots,
+)
 from services.sync_service import trigger_sync
 
 router = APIRouter(prefix="/repos", tags=["repos"])
@@ -107,6 +116,41 @@ def sync(
     repository = get_connected_repository(db, user=user, repository_id=repository_id)
     snapshot = trigger_sync(db, repository=repository)
     return SnapshotOut.model_validate(snapshot)
+
+
+@router.get("/{repository_id}/search", response_model=SearchResultsOut)
+def search(
+    repository_id: uuid.UUID,
+    q: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> SearchResultsOut:
+    """Lexical search across everything the latest completed study indexed —
+    files, folders, symbols, routes, README sections, docs, and the user's
+    own threads. Grouped server-side (RULES.md §14: filtering and grouping
+    are the server's job, never fetch-everything-and-filter-in-the-client),
+    which is also what keeps this fast enough to run per keystroke."""
+    repository = get_connected_repository(db, user=user, repository_id=repository_id)
+    snapshot = latest_ready_snapshot(db, repository=repository)
+    groups = search_repository(
+        db,
+        repository_id=repository.id,
+        user_id=user.id,
+        snapshot=snapshot,
+        query=q,
+    )
+    return SearchResultsOut(
+        groups=[
+            SearchGroupOut(
+                kind=group.kind,
+                label=group.label,
+                hits=[SearchHitOut.model_validate(hit) for hit in group.hits],
+            )
+            for group in groups
+        ],
+        snapshot_id=snapshot.id if snapshot else None,
+        indexed=snapshot is not None,
+    )
 
 
 @router.get("/{repository_id}/snapshots", response_model=list[SnapshotOut])

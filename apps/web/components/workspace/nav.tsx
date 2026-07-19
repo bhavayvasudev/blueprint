@@ -29,7 +29,10 @@ export const WORKSPACE_NAV: WorkspaceNavItem[] = [
     label: "The Briefing",
     dockLabel: "Briefing",
     icon: IconBriefing,
-    href: () => "/dashboard",
+    // Per-repo when a repository is in context (so walking into a repo and
+    // opening the Briefing shows *that* repository), the home arrival
+    // otherwise.
+    href: (repoId) => (repoId ? `/repo/${repoId}/briefing` : "/dashboard"),
     unavailableHint: "",
   },
   {

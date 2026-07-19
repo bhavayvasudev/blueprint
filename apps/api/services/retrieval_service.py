@@ -27,10 +27,36 @@ from models.repository import File
 from models.types import GraphType
 from pipeline.retrieval.interfaces import ScoredChunk, merge_hybrid_results
 
+# A noise gate on vector similarity (cosine, so `1 - distance`), not a
+# relevance threshold — the distinction matters and the number should not be
+# raised without re-measuring.
+#
+# kNN always returns the k nearest chunks no matter how far away they are, so
+# an unrelated question ("recipe for banana bread") still comes back with a
+# full, confident-looking result set. Handing that to the model invites it to
+# construct an answer out of whatever it was given.
+#
+# Measured against `nvidia/nv-embedqa-e5-v5` on a small indexed repository,
+# top-hit scores were: a direct symbol match 0.455, a direct doc-section match
+# 0.412, a legitimate but diffuse repository question 0.313, an unrelated
+# technical question 0.383, and unrelated non-technical prose 0.240. Those
+# ranges *overlap*: no absolute cut separates the diffuse-but-real 0.313 from
+# the plausible-but-wrong 0.383. So this floor deliberately only removes the
+# clearly-unrelated tail and makes no claim to filter for relevance — that
+# remains the grounding prompt's job (it instructs the model to say the
+# evidence is insufficient rather than stretch it), and the honest reporting
+# in `thread_retrieval.diagnose_retrieval`'s job.
+#
+# Set low on purpose: a false negative here silently deletes real evidence,
+# which is strictly worse than passing through a weak chunk the model is
+# already told it may reject.
+_MIN_VECTOR_SCORE = 0.22
+
 
 class PgVectorSearchBackend:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, min_score: float = _MIN_VECTOR_SCORE) -> None:
         self._session = session
+        self._min_score = min_score
 
     def search(
         self, query_embedding: list[float], *, snapshot_id: uuid.UUID, top_k: int
@@ -59,6 +85,7 @@ class PgVectorSearchBackend:
             ScoredChunk(chunk_id=chunk.id, chunk_type="doc", score=1.0 - distance)
             for chunk, distance in doc_rows
         ]
+        results = [r for r in results if r.score >= self._min_score]
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 

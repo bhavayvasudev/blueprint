@@ -10,6 +10,10 @@ export interface Command {
   label: string;
   /** Right-aligned context — a room name, a module path. */
   hint?: string;
+  /** Secondary context sitting directly after the label — the file a symbol
+   * lives in, the source of a doc section. Truncates before the label does,
+   * since the label is the thing being identified. */
+  detail?: string;
   icon?: ReactNode;
   /** Extra match terms beyond the label. */
   keywords?: string;
@@ -21,6 +25,12 @@ export interface Command {
 export interface CommandGroup {
   label: string;
   commands: Command[];
+  /** Set for groups whose commands were already matched against the query
+   * elsewhere — server-side search results, typically. The palette shows
+   * them verbatim instead of filtering them a second time against a query
+   * they were built from (which would drop, say, a `main.py` hit for the
+   * query "entrypoint"). */
+  prefiltered?: boolean;
 }
 
 export interface CommandPaletteProps {
@@ -28,6 +38,18 @@ export interface CommandPaletteProps {
   onClose: () => void;
   groups: CommandGroup[];
   placeholder?: string;
+  /** Controlled query. Provide both to drive remote search from the caller;
+   * omit both and the palette owns its own query as before. */
+  query?: string;
+  onQueryChange?: (query: string) => void;
+  /** A search is in flight. Renders as a hairline progress line under the
+   * input rather than replacing results — results stay on screen and update
+   * in place, so typing never flashes the panel empty. */
+  loading?: boolean;
+  /** Replaces the default "nothing matches" copy — the place to explain
+   * *why* there's nothing (never indexed, no threads yet) instead of
+   * shrugging. */
+  emptyState?: ReactNode;
 }
 
 /** The ⌘K layer — asking is the universal entry (UX strategy §7: the
@@ -42,34 +64,52 @@ export function CommandPalette({
   onClose,
   groups,
   placeholder = "Ask, or jump anywhere…",
+  query: controlledQuery,
+  onQueryChange,
+  loading = false,
+  emptyState,
 }: CommandPaletteProps) {
   const reduceMotion = useReducedMotion();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const baseId = useId();
   const listId = `${baseId}-list`;
-  const [query, setQuery] = useState("");
+  const [uncontrolledQuery, setUncontrolledQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+
+  const isControlled = controlledQuery !== undefined;
+  const query = isControlled ? controlledQuery : uncontrolledQuery;
+
+  const setQuery = (next: string) => {
+    if (!isControlled) setUncontrolledQuery(next);
+    onQueryChange?.(next);
+  };
 
   useOverlay(open, onClose, panelRef);
 
   // A fresh opening is a fresh question.
   useEffect(() => {
     if (open) {
-      setQuery("");
+      setUncontrolledQuery("");
+      onQueryChange?.("");
       setActiveIndex(0);
     }
+    // `onQueryChange` is intentionally omitted: this must run on open, not
+    // whenever the caller happens to hand over a new callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return groups;
     return groups
-      .map((group) => ({
-        ...group,
-        commands: group.commands.filter((command) =>
-          `${command.label} ${command.keywords ?? ""}`.toLowerCase().includes(needle),
-        ),
-      }))
+      .map((group) => {
+        if (group.prefiltered || !needle) return group;
+        return {
+          ...group,
+          commands: group.commands.filter((command) =>
+            `${command.label} ${command.keywords ?? ""}`.toLowerCase().includes(needle),
+          ),
+        };
+      })
       .filter((group) => group.commands.length > 0);
   }, [groups, query]);
 
@@ -124,7 +164,7 @@ export function CommandPalette({
             transition={{ type: "spring", stiffness: 340, damping: 30, mass: 0.7 }}
             className="glass-strong edge-light relative w-full max-w-xl overflow-hidden rounded-2xl outline-none"
           >
-            <div className="flex items-center gap-3 border-b border-ink-100 px-5 py-4 dark:border-ink-800">
+            <div className="relative flex items-center gap-3 border-b border-ink-100 px-5 py-4 dark:border-ink-800">
               <svg viewBox="0 0 16 16" className="size-4 text-ink-400" fill="none" aria-hidden="true">
                 <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
                 <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -144,14 +184,41 @@ export function CommandPalette({
                 className="w-full bg-transparent text-sm text-ink-950 outline-none placeholder:text-ink-400 dark:text-ink-50 dark:placeholder:text-ink-500"
               />
               <Kbd>esc</Kbd>
+
+              {/* Search-in-flight, as a hairline sweep along the input's
+                  lower edge. Deliberately not a spinner and deliberately not
+                  a state that replaces the list: results stay put and update
+                  in place, so fast typing never flashes the panel empty. */}
+              <AnimatePresence>
+                {loading && (
+                  <motion.span
+                    aria-hidden
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-px overflow-hidden"
+                  >
+                    <motion.span
+                      className="absolute inset-y-0 w-1/3 bg-accent-500/70"
+                      animate={reduceMotion ? { opacity: 0.5 } : { x: ["-100%", "300%"] }}
+                      transition={
+                        reduceMotion
+                          ? { duration: 0 }
+                          : { duration: 1.1, repeat: Infinity, ease: "easeInOut" }
+                      }
+                    />
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </div>
 
             <div id={listId} role="listbox" className="max-h-80 overflow-y-auto p-2">
-              {flat.length === 0 && (
-                <p className="px-3 py-8 text-center text-sm text-ink-500 dark:text-ink-400">
-                  Nothing matches “{query}”. The architect can’t take you there yet.
-                </p>
-              )}
+              {flat.length === 0 &&
+                (emptyState ?? (
+                  <p className="px-3 py-8 text-center text-sm text-ink-500 dark:text-ink-400">
+                    Nothing matches “{query}”. The architect can’t take you there yet.
+                  </p>
+                ))}
               {filtered.map((group) => (
                 <div key={group.label} role="group" aria-label={group.label}>
                   <p className="px-3 pt-3 pb-1.5 text-xs font-medium text-ink-500 dark:text-ink-400">
@@ -178,9 +245,16 @@ export function CommandPalette({
                             {command.icon}
                           </span>
                         )}
-                        <span className="flex-1">{command.label}</span>
+                        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                          <span className="shrink-0">{command.label}</span>
+                          {command.detail && (
+                            <span className="truncate font-mono text-xs text-ink-400 dark:text-ink-500">
+                              {command.detail}
+                            </span>
+                          )}
+                        </span>
                         {command.hint && (
-                          <span className="text-xs text-ink-400 dark:text-ink-500">
+                          <span className="shrink-0 text-xs text-ink-400 dark:text-ink-500">
                             {command.hint}
                           </span>
                         )}

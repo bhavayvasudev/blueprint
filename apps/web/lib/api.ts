@@ -5,6 +5,7 @@ import type {
   Installation,
   Repository,
   Snapshot,
+  Thread,
   User,
 } from "@blueprint/shared-types";
 import { API_BASE_URL } from "./config";
@@ -88,4 +89,17 @@ export async function listAvailableRepositories(
   const res = await apiFetch(`/api/v1/repos/available?installation_id=${installationId}`);
   if (!res.ok) throw new Error(`GET /repos/available failed: ${res.status}`);
   return (await res.json()) as AvailableRepository[];
+}
+
+export async function listThreads(repositoryId: string): Promise<Thread[]> {
+  const res = await apiFetch(`/api/v1/repos/${repositoryId}/threads`);
+  if (res.status === 401) throw new UnauthenticatedError();
+  if (!res.ok) throw new Error(`GET threads failed: ${res.status}`);
+  return (await res.json()) as Thread[];
+}
+
+export async function listThreadSuggestions(repositoryId: string): Promise<string[]> {
+  const res = await apiFetch(`/api/v1/repos/${repositoryId}/threads/suggestions`);
+  if (!res.ok) throw new Error(`GET thread suggestions failed: ${res.status}`);
+  return (await res.json()) as string[];
 }

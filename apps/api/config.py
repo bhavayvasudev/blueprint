@@ -51,6 +51,36 @@ class Settings(BaseSettings):
     # identifier, not fixed by this document (ARCHITECTURE.md §10: model
     # choice left open pending Stage 4's own accuracy/cost comparison).
     embedding_model: str = "openai/text-embedding-3-small"
+    # Only consulted by the "nvidia" provider. An asymmetric retrieval-QA
+    # model: it distinguishes "query" from "passage" at embed time, which is
+    # what `EmbeddingProvider`'s two-method split expresses. Emits
+    # 1024-dimensional vectors, matching `models.types.EMBEDDING_DIM` — the
+    # two must agree or indexing fails at the pgvector insert.
+    nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"
+
+    # --- Threads: the repository-conversation LLM (ARCHITECTURE.md §13's
+    # Stage-11-style exception — a light, grounded retrieval + one LLM call
+    # in the request path, never the full reasoning pipeline). The provider
+    # is a config seam like `embedding_provider`: "nvidia" is the only
+    # implementation today (integrations/llm/registry.py). "none" is a
+    # first-class value, not an error — it makes the Threads room degrade
+    # to an honest "no reasoning model is configured" state rather than
+    # 500ing, so local dev and CI work with zero credentials.
+    llm_provider: str = "nvidia"
+    # NVIDIA's OpenAI-compatible inference endpoint. Swappable so the same
+    # client also works against a self-hosted NIM without a new provider
+    # class. The chat model is NVIDIA Nemotron (the spec's "Nemotron 3
+    # Ultra") — kept configurable, not hardcoded, since model ids on the
+    # hosted catalog change and the accuracy/cost pick isn't frozen here.
+    nvidia_api_key: str = ""
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    # Sampling/output defaults for the NVIDIA chat provider. Not exposed as
+    # env vars (no product need to tune these per-deployment yet) — just a
+    # single place to change them if that changes.
+    nvidia_top_p: float = 0.9
+    nvidia_max_output_tokens: int = 4096
+    nvidia_enable_reasoning: bool = True
 
     environment: str = "development"
 

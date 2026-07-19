@@ -1,11 +1,10 @@
 import { notFound, redirect } from "next/navigation";
-import { Reveal, Text } from "@blueprint/ui";
+import { Reveal } from "@blueprint/ui";
 import { AtlasGraph } from "@/components/atlas/AtlasGraph";
 import { ModuleGraph } from "@/components/architecture/ModuleGraph";
 import { RepositoryStructure } from "@/components/architecture/RepositoryStructure";
-import { MethodRows } from "@/components/study/MethodRows";
-import { ProseSegments } from "@/components/study/Prose";
 import { SectionRule } from "@/components/study/SectionRule";
+import { StudyProgress } from "@/components/StudyProgress";
 import { SyncTrigger } from "@/components/SyncTrigger";
 import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
@@ -18,10 +17,16 @@ import {
 import { timeAgo } from "@/lib/format";
 import { analyzeGraph } from "@/lib/insights";
 
-/** The Atlas — "what is the shape of this system?" The navigable
- * structural model: the shape read first (interpretation leads), the
- * module constellation as the main event, then the same facts as text,
- * and the study's method last (inventory never leads — PRODUCT.md). */
+/** The Atlas — the map, and only the map. Every visualization of this
+ * repository's shape lives here: the architecture constellation, the
+ * folder tree, and the module graph as text. Nothing executive belongs
+ * on this page — the summary, the tech stack, the status, the suggested
+ * improvements all live in the Briefing (PRODUCT.md room separation; the
+ * brief's central fix was pulling these two rooms apart). The graph
+ * leads now instead of hiding behind a "Stats for nerds" gate: this is
+ * Google Maps for the codebase, so it opens on the map. Every module in
+ * it is clickable, and the module index below the canvas is the same
+ * information as text (RULES.md §16). */
 export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
   const user = await getCurrentUser();
   if (!user) {
@@ -42,12 +47,13 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
   const architectureGraph =
     latestSnapshot?.status === "ready" ? await getArchitectureGraph(id, latestSnapshot.id) : null;
   const reading = architectureGraph ? analyzeGraph(architectureGraph) : null;
-
   const filePaths = architectureGraph
     ? architectureGraph.repository_graph_nodes.flatMap((node) =>
         Array.isArray(node.metadata.file_paths) ? (node.metadata.file_paths as string[]) : [],
       )
     : [];
+
+  const repoShortName = repository.full_name.split("/").pop() ?? repository.full_name;
 
   return (
     <WorkspaceShell
@@ -56,7 +62,7 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
       activeNav="atlas"
       activeRepoId={repository.id}
     >
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-14 px-6 pb-10 pt-28 xl:px-8 xl:pt-24">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-12 px-6 pb-10 pt-28 xl:px-8 xl:pt-24">
         <header className="flex flex-col gap-6">
           <Reveal distance={14}>
             <div className="flex flex-wrap items-baseline justify-between gap-4">
@@ -73,30 +79,53 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
             </div>
           </Reveal>
 
-          {reading ? (
-            <Reveal delay={0.1} distance={28}>
-              <h1
-                className="max-w-3xl text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
-                style={{ textWrap: "balance" }}
-              >
-                <ProseSegments segments={reading.thesis} repositoryId={repository.id} />
-              </h1>
+          {architectureGraph ? (
+            <Reveal delay={0.1} distance={20}>
+              <div className="flex flex-col gap-1.5">
+                <h1 className="text-3xl font-semibold tracking-tight text-ink-950 sm:text-4xl dark:text-ink-50">
+                  {repoShortName}
+                </h1>
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-500 dark:text-ink-400">
+                  <span>AI Repository Map</span>
+                  <span aria-hidden>·</span>
+                  <span>
+                    Last indexed {timeAgo(architectureGraph.snapshot.created_at) ?? "just now"}
+                  </span>
+                  {architectureGraph.snapshot.commit_sha ? (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span className="font-mono">
+                        {architectureGraph.snapshot.commit_sha.slice(0, 7)}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+              </div>
             </Reveal>
           ) : null}
         </header>
 
         {architectureGraph && reading ? (
           <>
-            {/* The constellation: distance from center is real graph
-                distance from the load-bearing module. */}
-            <Reveal delay={0.15} distance={20}>
-              <AtlasGraph
-                key={focus ?? "default"}
-                modules={reading.modules}
-                keystoneId={reading.keystoneId}
-                initialFocusId={focus}
-              />
-            </Reveal>
+            {/* The map leads. The constellation is the hero of this room —
+                deterministic orbital layout, every module clickable into
+                its imports and dependents. */}
+            <section className="flex flex-col gap-5">
+              <SectionRule>Architecture</SectionRule>
+              <Reveal delay={0.05} distance={20}>
+                <AtlasGraph
+                  key={focus ?? "default"}
+                  modules={reading.modules}
+                  keystoneId={reading.keystoneId}
+                  initialFocusId={focus}
+                />
+              </Reveal>
+            </section>
+
+            <section className="flex flex-col gap-5">
+              <SectionRule>Folder tree</SectionRule>
+              <RepositoryStructure filePaths={filePaths} />
+            </section>
 
             <section className="flex flex-col gap-5">
               <SectionRule>The same sky, as text</SectionRule>
@@ -105,54 +134,30 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
                 edges={architectureGraph.repository_graph_edges}
               />
             </section>
-
-            <section className="flex max-w-4xl flex-col gap-5">
-              <SectionRule>How I read it</SectionRule>
-              <Text size="sm" tone="secondary">
-                Studied {timeAgo(architectureGraph.snapshot.created_at) ?? "just now"}
-                {architectureGraph.snapshot.commit_sha
-                  ? ` at commit ${architectureGraph.snapshot.commit_sha.slice(0, 7)}`
-                  : ""}
-                . Feature detection and the reasoning layers arrive in a later phase — nothing on
-                this page is generated; every line above is counted.
-              </Text>
-              <MethodRows rows={reading.method} />
-            </section>
-
-            <section className="flex flex-col gap-5">
-              <SectionRule>Every file, by module</SectionRule>
-              <details className="group">
-                <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-2 text-sm font-medium text-ink-500 transition-colors hover:text-accent-600 dark:text-ink-400 dark:hover:text-accent-400 [&::-webkit-details-marker]:hidden">
-                  <span className="group-open:hidden">Show all {filePaths.length.toLocaleString()} files</span>
-                  <span className="hidden group-open:inline">Hide the file inventory</span>
-                  <span aria-hidden className="text-xs transition-transform group-open:rotate-180">
-                    ▾
-                  </span>
-                </summary>
-                <div className="mt-4">
-                  <RepositoryStructure filePaths={filePaths} />
-                </div>
-              </details>
-            </section>
           </>
+        ) : latestSnapshot ? (
+          <div className="flex max-w-xl flex-col gap-6">
+            <h1
+              className="text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
+              style={{ textWrap: "balance" }}
+            >
+              {latestSnapshot.status === "failed"
+                ? "The study failed — there is no model to walk."
+                : "I'm reading this repository."}
+            </h1>
+            <StudyProgress repositoryId={repository.id} initialSnapshot={latestSnapshot} />
+          </div>
         ) : (
           <div className="flex max-w-xl flex-col gap-4">
             <h1
               className="text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
               style={{ textWrap: "balance" }}
             >
-              {latestSnapshot
-                ? latestSnapshot.status === "failed"
-                  ? "The study failed — there is no model to walk."
-                  : "I'm still reading this repository."
-                : "No model of this repository exists yet."}
+              No model of this repository exists yet.
             </h1>
             <p className="text-lg leading-relaxed text-ink-500 dark:text-ink-400">
-              {latestSnapshot
-                ? latestSnapshot.status === "failed"
-                  ? "Run the study again and the Atlas will draw itself from what I find."
-                  : "The Atlas draws itself the moment the study completes — no placeholder shapes in the meantime."
-                : "Run the first study and the Atlas will draw the real structure — modules, import paths, and the module carrying the most weight."}
+              Run the first study and the Atlas will draw the real structure — modules, import
+              paths, and the module carrying the most weight.
             </p>
           </div>
         )}

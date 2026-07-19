@@ -383,3 +383,21 @@ The read side (`services/snapshot_service.py`: `list_snapshots`, `get_snapshot`,
 **Status:** Accepted.
 
 **Future reconsideration:** when Phase 2 (Feature Extraction) actually needs retrieval, decide then whether Stage 4 joins the scheduled `/sync` path or stays a separate on-demand step — real consumer, real evidence, same posture as ADR-018/021's "revisit empirically" pattern. If RQ's no-retry default proves too brittle against real transient GitHub/network failures, a bounded retry belongs in `integrations/queue/rq_queue.py`, not scattered into `pipeline_runner.py`.
+
+---
+
+### ADR-026 — Global search is lexical and server-grouped, not semantic
+
+**Decision:** the ⌘K palette is backed by a new `GET /repos/{id}/search?q=` endpoint (`services/search_service.py`) that does **literal matching over names Blueprint already extracted** — `files.path`, `code_chunks.symbol_name`, `doc_chunks.section_title`, the snapshot's regex-matched `api_routes`, the manifest's verbatim README sections, and the user's own `threads.title`. No embedding call is made on this path. Results are grouped and ranked server-side (Files, Folders, Functions, Classes, Symbols, Routes, README, Documentation, Threads) and returned pre-matched; the palette renders them verbatim rather than filtering a second time.
+
+**Reason:** search has two distinct jobs and they want opposite architectures. "Take me to the thing I can already name" must answer between keystrokes, which rules out a network round-trip to an embedding provider before the query can even be run. "Explain what this repository does" is inherently semantic — and already has a home in Threads (`services/thread_retrieval.py`), which is built for exactly that and cites its evidence. Splitting them keeps each honest: the palette never pretends to understand intent, and Threads never pretends to be instant. This is RULES.md §1's "deterministic before probabilistic" applied to a serving-path feature rather than a pipeline stage.
+
+Server-side grouping (rather than fetching an index to the client) follows RULES.md §14's existing rule for Findings — the frontend never pulls everything and filters locally — and is also what keeps the payload small enough to re-request per keystroke.
+
+**Alternatives considered:** reusing `HybridRetrievalService` for the palette (rejected — its vector leg costs a provider round-trip per query, and its RRF fusion is tuned to produce *evidence for an answer*, not a jump list; a palette wants the exact `main.py` you typed, not the five chunks most semantically adjacent to it); shipping a client-side index of all names fetched on repo load (rejected — unbounded payload for large repositories, goes stale against re-syncs, and contradicts RULES.md §14); adding a dedicated search engine such as Meilisearch or Elasticsearch (rejected — same "adequate now, no new datastore" reasoning as ADR-003/ADR-006; `ILIKE` over already-indexed columns is sufficient at Phase 0/1 scale and adds no operational surface).
+
+**Tradeoffs accepted:** the palette finds nothing for a conceptual query ("where does auth happen?") unless a name literally matches — deliberate, and the empty state names Threads as the place for that class of question rather than silently returning nothing. Ranking is a hand-written integer score (exact > prefix > word-boundary > substring, shorter wins ties), not BM25; it is unit-tested (`tests/services/test_search_service.py`) and can be replaced without touching either the endpoint or the palette. Folder derivation scans file paths per query rather than maintaining a folders table — bounded by an explicit scan limit, and revisitable if profiling shows it matters.
+
+**Status:** Accepted.
+
+**Future reconsideration:** if repositories get large enough that `ILIKE '%needle%'` stops being instant, the first move is a trigram (`pg_trgm`) GIN index on `files.path` and `code_chunks.symbol_name` — same datastore, no new dependency — before any dedicated search engine is considered. If users repeatedly type conceptual queries into the palette (worth measuring), the right answer is likely a "ask Threads about this" affordance in the empty state, not bolting vector search onto this path.

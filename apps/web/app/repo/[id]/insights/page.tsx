@@ -204,6 +204,17 @@ export default async function InsightsPage(props: PageProps<"/repo/[id]/insights
               </section>
             ) : null}
 
+            {/* "The read" — the interpretive claims, moved here from the
+                Briefing so each claim sits next to the confidence breakdown
+                that explains it, instead of standing alone in a room whose
+                job is the one-paragraph summary. */}
+            <section className="flex flex-col gap-9">
+              <SectionRule>The read</SectionRule>
+              {reading.claims.map((claim) => (
+                <ClaimBlock key={claim.id} claim={claim} repositoryId={repository.id} />
+              ))}
+            </section>
+
             <section className="flex flex-col gap-5">
               <SectionRule>What the claims rest on</SectionRule>
               <Surface padding="md" className="flex flex-col gap-3">

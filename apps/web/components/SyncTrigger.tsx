@@ -1,37 +1,20 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { Snapshot } from "@blueprint/shared-types";
 import { Badge, Text } from "@blueprint/ui";
-import { PUBLIC_API_BASE_URL } from "@/lib/config";
+import { useSnapshotPolling, useTriggerSync } from "@/lib/use-snapshot-polling";
 
 const STATUS_TONE = { ready: "ready", indexing: "indexing", failed: "failed" } as const;
-
-async function fetchSnapshot(repositoryId: string, snapshotId: string): Promise<Snapshot> {
-  const res = await fetch(
-    `${PUBLIC_API_BASE_URL}/api/v1/repos/${repositoryId}/snapshots/${snapshotId}`,
-    { credentials: "include" },
-  );
-  if (!res.ok) throw new Error(`Failed to load snapshot status (${res.status})`);
-  return (await res.json()) as Snapshot;
-}
-
-async function triggerSync(repositoryId: string): Promise<Snapshot> {
-  const res = await fetch(`${PUBLIC_API_BASE_URL}/api/v1/repos/${repositoryId}/sync`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(`Failed to trigger sync (${res.status})`);
-  return (await res.json()) as Snapshot;
-}
 
 /** Indexing Status (RULES.md §17: motion communicates a real state
  * transition — this is one). Polls the snapshot it's watching only while
  * `indexing`; a `ready`/`failed` result refreshes the Server Component
  * tree once so the rest of the Architecture View picks up real data,
- * rather than duplicating the fetch client-side. */
+ * rather than duplicating the fetch client-side. Shares its poll with
+ * `StudyProgress` (the main-panel view of the same snapshot) via
+ * `useSnapshotPolling`'s query key, rather than each polling separately. */
 export function SyncTrigger({
   repositoryId,
   initialSnapshot,
@@ -40,23 +23,8 @@ export function SyncTrigger({
   initialSnapshot: Snapshot | null;
 }) {
   const router = useRouter();
-  const queryClient = useQueryClient();
-
-  const snapshotQuery = useQuery({
-    queryKey: ["snapshot", repositoryId, initialSnapshot?.id],
-    queryFn: () => fetchSnapshot(repositoryId, initialSnapshot!.id),
-    enabled: initialSnapshot !== null,
-    initialData: initialSnapshot ?? undefined,
-    refetchInterval: (query) => (query.state.data?.status === "indexing" ? 2000 : false),
-  });
-
-  const syncMutation = useMutation({
-    mutationFn: () => triggerSync(repositoryId),
-    onSuccess: (snapshot) => {
-      queryClient.setQueryData(["snapshot", repositoryId, snapshot.id], snapshot);
-      router.refresh();
-    },
-  });
+  const snapshotQuery = useSnapshotPolling(repositoryId, initialSnapshot);
+  const syncMutation = useTriggerSync(repositoryId);
 
   const current = snapshotQuery.data ?? initialSnapshot;
   const wasIndexing = current?.status === "indexing";
@@ -84,7 +52,7 @@ export function SyncTrigger({
       )}
       <button
         type="button"
-        onClick={() => syncMutation.mutate()}
+        onClick={() => syncMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
         disabled={isSyncing}
         className="rounded-md bg-ink-950 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-ink-800 disabled:opacity-50 dark:bg-white dark:text-ink-950 dark:hover:bg-ink-100"
       >

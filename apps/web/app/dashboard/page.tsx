@@ -3,14 +3,9 @@ import { redirect } from "next/navigation";
 import type { Repository, Snapshot } from "@blueprint/shared-types";
 import { Badge, Reveal, Text } from "@blueprint/ui";
 import { ConnectPanel } from "@/components/ConnectPanel";
-import { ClaimBlock } from "@/components/study/ClaimBlock";
-import { MethodRows } from "@/components/study/MethodRows";
-import { ProseSegments } from "@/components/study/Prose";
 import { SectionRule } from "@/components/study/SectionRule";
 import { SyncTrigger } from "@/components/SyncTrigger";
-import { AIBriefingCard } from "@/components/workspace/AIBriefingCard";
-import { GraphPreviewCard } from "@/components/workspace/GraphPreviewCard";
-import { RepositoryOverviewCard } from "@/components/workspace/RepositoryOverviewCard";
+import { BriefingRoom } from "@/components/workspace/BriefingRoom";
 import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
   getArchitectureGraph,
@@ -23,11 +18,13 @@ import { PUBLIC_API_BASE_URL } from "@/lib/config";
 import { timeAgo } from "@/lib/format";
 import { analyzeGraph } from "@/lib/insights";
 
-/** The Briefing — the arrival point. Not an overview, not a dashboard:
- * the architect's current read of the most recently studied repository,
- * as prose and claims (PRODUCT.md: interpretation above evidence above
- * inventory). Every claim opens into its reasoning; every module name
- * is a handle into the Atlas. */
+/** The Briefing home — the arrival point. Renders the executive read of
+ * the most-recently-studied repository (the same `BriefingRoom` every
+ * per-repo `/repo/[id]/briefing` uses, so the two can never drift), plus
+ * the surfaces unique to the home: connecting GitHub and jumping to any
+ * other repository. It answers "what is this?" for one repository and
+ * "where do I go next?" for the rest — no architecture graph here, that
+ * is the Atlas's room (PRODUCT.md room separation). */
 export default async function BriefingPage(props: PageProps<"/dashboard">) {
   const user = await getCurrentUser();
   if (!user) {
@@ -40,7 +37,7 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
     listInstallations(),
   ]);
 
-  // The briefing covers the most recently studied repository; the
+  // The home briefing covers the most recently studied repository; the
   // sidebar is the way to walk into any other one.
   const repository =
     [...repositories].sort((a, b) =>
@@ -59,12 +56,6 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
       ])
     : [null, null];
   const reading = graph ? analyzeGraph(graph, previousGraph) : null;
-  const firstName = user.name.split(" ")[0];
-  const confidencePercent =
-    graph && graph.file_count > 0
-      ? Math.round((graph.tree_sitter_status.full_confidence_files / graph.file_count) * 100)
-      : null;
-  const thesisExcerpt = reading ? reading.thesis.map((segment) => segment.text).join("") : "";
 
   return (
     <WorkspaceShell
@@ -74,175 +65,59 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
       activeRepoId={repository?.id ?? null}
     >
       <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 pb-10 pt-28 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-16 xl:px-8 xl:pt-24">
-        <div className="flex min-w-0 flex-col gap-16">
-        {repository && graph && reading && currentReady ? (
-          <>
-            {/* Who is being briefed, on what, from when — the quiet context line. */}
-            <header className="flex flex-col gap-6">
-              <Reveal distance={10}>
-                <p className="text-sm text-ink-500 dark:text-ink-400">
-                  Hi, <span className="font-medium text-ink-950 dark:text-ink-50">{firstName}</span> 👋
-                </p>
-              </Reveal>
-              <Reveal distance={14}>
-                <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-sm text-ink-500 dark:text-ink-400">
-                  <span className="font-medium text-ink-950 dark:text-ink-50">The Briefing</span>
-                  <span aria-hidden>·</span>
-                  <span className="font-mono">{repository.full_name}</span>
-                  <span aria-hidden>·</span>
-                  <span>studied {timeAgo(currentReady.created_at) ?? "just now"}</span>
-                  {currentReady.commit_sha ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span className="font-mono">at {currentReady.commit_sha.slice(0, 7)}</span>
-                    </>
-                  ) : null}
-                  {latest && latest.id !== currentReady.id ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span className="text-status-indexing-deep dark:text-status-indexing">
-                        {latest.status === "indexing"
-                          ? "a fresh study is underway"
-                          : "the newest study attempt failed — this is the last good read"}
-                      </span>
-                    </>
-                  ) : null}
-                </p>
-              </Reveal>
+        <div className="flex min-w-0 flex-col gap-14">
+          {repository && graph && reading && currentReady ? (
+            <BriefingRoom
+              repository={repository}
+              graph={graph}
+              reading={reading}
+              currentReady={currentReady}
+              latest={latest}
+            />
+          ) : (
+            <PreStudyBriefing repository={repository} latest={latest} />
+          )}
 
-              {/* The thesis: the read of the repository, in one articulable
-                  sentence. Module names inside it are handles into the Atlas. */}
-              <Reveal delay={0.1} distance={28}>
-                <h1
-                  className="max-w-3xl text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
-                  style={{ textWrap: "balance" }}
-                >
-                  <ProseSegments segments={reading.thesis} repositoryId={repository.id} />
-                </h1>
-              </Reveal>
-            </header>
-
-            <Reveal delay={0.18} distance={20} className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <GraphPreviewCard
-                modules={reading.modules}
-                keystoneId={reading.keystoneId}
-                repositoryId={repository.id}
-              />
-              <RepositoryOverviewCard
-                repository={repository}
-                fileCount={graph.file_count}
-                moduleCount={reading.modules.length}
-                importCount={graph.repository_graph_edges.length}
-                confidencePercent={confidencePercent}
-              />
-              <AIBriefingCard excerpt={thesisExcerpt} hasMore={reading.claims.length > 0} />
-            </Reveal>
-
-            <div id="the-read" className="scroll-mt-28">
-              <Reveal delay={0.26} distance={18} className="flex flex-col gap-9">
-                <SectionRule>The read</SectionRule>
-                {reading.claims.map((claim) => (
-                  <ClaimBlock key={claim.id} claim={claim} repositoryId={repository.id} />
-                ))}
-              </Reveal>
-            </div>
-
-            {reading.deltas ? (
-              <Reveal delay={0.05} distance={18} className="flex flex-col gap-9">
-                <SectionRule>Since the last study</SectionRule>
-                {reading.deltas.map((claim) => (
-                  <ClaimBlock key={claim.id} claim={claim} repositoryId={repository.id} />
-                ))}
-              </Reveal>
+          {/* Studying more — quiet when a briefing exists, the protagonist when none does. */}
+          <section id="connect" className="flex max-w-2xl scroll-mt-28 flex-col gap-5">
+            <SectionRule>
+              {repositories.length > 0 ? "Study another repository" : "Give the architect something to read"}
+            </SectionRule>
+            {searchParams.install === "pending" ? (
+              <Text size="sm" tone="secondary">
+                Installation requested — waiting on organization owner approval.
+              </Text>
             ) : null}
-
-            <div className="flex flex-col gap-5">
-              <SectionRule>How I read it</SectionRule>
-              <MethodRows rows={reading.method} />
-              <Link
-                href={`/repo/${repository.id}`}
-                className="group inline-flex w-fit items-center gap-2 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700 dark:text-accent-400 dark:hover:text-accent-200"
-              >
-                Walk the shape in the Atlas
-                <span aria-hidden className="transition-transform group-hover:translate-x-1">
-                  →
-                </span>
-              </Link>
-            </div>
-          </>
-        ) : (
-          <PreStudyBriefing repository={repository} latest={latest} />
-        )}
-
-        {/* Studying more — quiet when a briefing exists, the protagonist when none does. */}
-        <section id="connect" className="flex max-w-2xl scroll-mt-28 flex-col gap-5">
-          <SectionRule>
-            {repositories.length > 0 ? "Study another repository" : "Give the architect something to read"}
-          </SectionRule>
-          {searchParams.install === "pending" ? (
-            <Text size="sm" tone="secondary">
-              Installation requested — waiting on organization owner approval.
-            </Text>
-          ) : null}
-          {searchParams.installed === "1" && searchParams.repo_sync_error !== "1" ? (
-            <Text size="sm" className="text-status-ready-deep dark:text-status-ready">
-              GitHub connected —{" "}
-              {repositories.length > 0
-                ? `${repositories.length} ${repositories.length === 1 ? "repository is" : "repositories are"} ready below.`
-                : "reading your repositories now."}
-            </Text>
-          ) : null}
-          {searchParams.repo_sync_error === "1" ? (
-            <Text size="sm" className="text-status-failed-deep dark:text-status-failed">
-              GitHub is connected, but I couldn&apos;t pull your repositories just now. Use
-              &ldquo;Sync from GitHub&rdquo; below to retry.
-            </Text>
-          ) : null}
-          <ConnectPanel
-            installations={installations}
-            connectedFullNames={new Set(repositories.map((repo) => repo.full_name))}
-          />
-          <a
-            href={`${PUBLIC_API_BASE_URL}/api/v1/auth/github/install`}
-            className="glass edge-light inline-flex w-fit items-center rounded-full px-4 py-2 text-sm font-medium text-ink-800 transition-colors hover:text-accent-600 dark:text-ink-200 dark:hover:text-accent-400"
-          >
-            {installations.length > 0 ? "Grant access to more repositories" : "Connect your GitHub account"}
-          </a>
-        </section>
-      </div>
+            {searchParams.installed === "1" && searchParams.repo_sync_error !== "1" ? (
+              <Text size="sm" className="text-status-ready-deep dark:text-status-ready">
+                GitHub connected —{" "}
+                {repositories.length > 0
+                  ? `${repositories.length} ${repositories.length === 1 ? "repository is" : "repositories are"} ready below.`
+                  : "reading your repositories now."}
+              </Text>
+            ) : null}
+            {searchParams.repo_sync_error === "1" ? (
+              <Text size="sm" className="text-status-failed-deep dark:text-status-failed">
+                GitHub is connected, but I couldn&apos;t pull your repositories just now. Use
+                &ldquo;Sync from GitHub&rdquo; below to retry.
+              </Text>
+            ) : null}
+            <ConnectPanel
+              installations={installations}
+              connectedFullNames={new Set(repositories.map((repo) => repo.full_name))}
+            />
+            <a
+              href={`${PUBLIC_API_BASE_URL}/api/v1/auth/github/install`}
+              className="glass edge-light inline-flex w-fit items-center rounded-full px-4 py-2 text-sm font-medium text-ink-800 transition-colors hover:text-accent-600 dark:text-ink-200 dark:hover:text-accent-400"
+            >
+              {installations.length > 0 ? "Grant access to more repositories" : "Connect your GitHub account"}
+            </a>
+          </section>
+        </div>
 
         {repositories.length > 0 ? (
           <Reveal delay={0.14} distance={16}>
             <aside className="flex flex-col gap-8 lg:sticky lg:top-28">
-              <div className="flex flex-col gap-4">
-                <SectionRule>Recent repositories</SectionRule>
-                <ul className="flex flex-col gap-1">
-                  {[...repositories]
-                    .sort((a, b) => (b.last_synced_at ?? "").localeCompare(a.last_synced_at ?? ""))
-                    .slice(0, 5)
-                    .map((repo) => (
-                      <li key={repo.id}>
-                        <Link
-                          href={`/repo/${repo.id}`}
-                          className="group flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 transition-colors hover:bg-ink-950/5 dark:hover:bg-white/6"
-                        >
-                          <span className="flex min-w-0 flex-col">
-                            <span className="truncate font-mono text-sm text-ink-800 group-hover:text-ink-950 dark:text-ink-200 dark:group-hover:text-ink-50">
-                              {repo.full_name}
-                            </span>
-                            <span className="text-xs text-ink-400 dark:text-ink-500">
-                              {repo.last_synced_at ? `synced ${timeAgo(repo.last_synced_at)}` : "never synced"}
-                            </span>
-                          </span>
-                          <Badge tone={repo.connection_status === "connected" ? "ready" : "failed"}>
-                            {repo.connection_status}
-                          </Badge>
-                        </Link>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-
               <div className="flex flex-col gap-4">
                 <SectionRule>Quick actions</SectionRule>
                 <div className="flex flex-col gap-1">
@@ -275,6 +150,35 @@ export default async function BriefingPage(props: PageProps<"/dashboard">) {
                     Browse all repositories →
                   </Link>
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <SectionRule>Recent repositories</SectionRule>
+                <ul className="flex flex-col gap-1">
+                  {[...repositories]
+                    .sort((a, b) => (b.last_synced_at ?? "").localeCompare(a.last_synced_at ?? ""))
+                    .slice(0, 5)
+                    .map((repo) => (
+                      <li key={repo.id}>
+                        <Link
+                          href={`/repo/${repo.id}/briefing`}
+                          className="group flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 transition-colors hover:bg-ink-950/5 dark:hover:bg-white/6"
+                        >
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate font-mono text-sm text-ink-800 group-hover:text-ink-950 dark:text-ink-200 dark:group-hover:text-ink-50">
+                              {repo.full_name}
+                            </span>
+                            <span className="text-xs text-ink-400 dark:text-ink-500">
+                              {repo.last_synced_at ? `synced ${timeAgo(repo.last_synced_at)}` : "never synced"}
+                            </span>
+                          </span>
+                          <Badge tone={repo.connection_status === "connected" ? "ready" : "failed"}>
+                            {repo.connection_status}
+                          </Badge>
+                        </Link>
+                      </li>
+                    ))}
+                </ul>
               </div>
             </aside>
           </Reveal>

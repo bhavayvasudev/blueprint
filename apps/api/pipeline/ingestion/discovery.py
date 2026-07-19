@@ -104,6 +104,54 @@ def discover_source_files(repo_root: Path) -> Iterator[Path]:
             yield path
 
 
+# Prose documentation, discovered separately from source because it feeds a
+# different Stage 4 chunker (`build_doc_chunks`, section granularity) than
+# code does (`build_code_chunks`, symbol granularity). `classify_language`
+# deliberately returns None for these — "not source code" — so they would
+# otherwise never be discovered at all, which is exactly why the README was
+# absent from retrieval before Stage 4 was wired in.
+DOC_EXTENSIONS = {".md", ".mdx", ".rst", ".txt", ".adoc"}
+
+# Extensionless documentation files worth indexing. Kept to conventional
+# all-caps root-level names: a bare lowercase extensionless file is far more
+# likely to be a script or a binary than prose.
+DOC_FILENAMES = {"README", "CHANGELOG", "CONTRIBUTING", "LICENSE", "AUTHORS", "NOTICE"}
+
+# Documentation is prose, so an oversized file is almost always generated
+# (a bundled changelog, an API dump) rather than something a human wrote for
+# another human. Indexing those buries real docs under noise and costs real
+# embedding spend. 512 KB is far above any hand-written README.
+_MAX_DOC_BYTES = 512 * 1024
+
+
+def is_doc_file(path: Path) -> bool:
+    return path.suffix.lower() in DOC_EXTENSIONS or path.name in DOC_FILENAMES
+
+
+def discover_doc_files(repo_root: Path) -> Iterator[Path]:
+    """Yields every prose documentation file under `repo_root` — the README,
+    `docs/**`, ADRs, changelogs — honouring the same exclusion list source
+    discovery uses, so a vendored `node_modules/**/README.md` never becomes
+    repository evidence.
+
+    Ordering is filesystem-dependent; callers needing determinism should
+    sort the result (`services/pipeline_runner.py` does, so that the README
+    is embedded first and a truncated indexing pass still has it)."""
+    for path in repo_root.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in EXCLUDED_DIRS for part in path.relative_to(repo_root).parts):
+            continue
+        if not is_doc_file(path):
+            continue
+        try:
+            if path.stat().st_size > _MAX_DOC_BYTES:
+                continue
+        except OSError:
+            continue
+        yield path
+
+
 # ARCHITECTURE.md §3.3: "config/manifest signals (Dockerfiles, entrypoints,
 # conventional services/packages layout)" — the module/service boundary
 # signal Stage 3's Repository Graph rollup groups files by

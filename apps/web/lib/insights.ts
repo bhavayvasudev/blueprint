@@ -1,4 +1,9 @@
-import type { ArchitectureGraph } from "@blueprint/shared-types";
+import type {
+  ArchitectureGraph,
+  DetectedStack,
+  DocAudit,
+  ReadmeExtract,
+} from "@blueprint/shared-types";
 
 /** The architect's read, computed — every claim on the Briefing and the
  * Atlas is arithmetic over the real repository graph (in-degree,
@@ -67,6 +72,102 @@ export interface StudyReading {
   keystoneId: string | null;
 }
 
+/** One weighted input into the Repository Health Score — always shown
+ * alongside the score itself (RULES.md: "a confidence score is never
+ * displayed without its composition being one click away"), never
+ * collapsed into a bare percentage. */
+export interface HealthFactor {
+  label: string;
+  weightPercent: number;
+  scorePercent: number;
+  detail: string;
+}
+
+export interface HealthScore {
+  score: number;
+  factors: HealthFactor[];
+}
+
+/** Repository Health, computed — every factor is arithmetic over
+ * numbers this same study already produced (parse coverage, cycle
+ * membership, module connectivity, the real doc-presence audit), never
+ * an LLM-assigned or fabricated number (RULES.md §23, PRODUCT.md's
+ * anti-"AI theater" stance). The weights are a judgment call, stated
+ * plainly as such — nothing here claims to be more precise than "one
+ * reasonable way to combine four real signals." */
+export function computeHealthScore(
+  reading: StudyReading,
+  graph: ArchitectureGraph,
+  docAudit: { present: string[]; missing: string[] } | null,
+): HealthScore {
+  const factors: HealthFactor[] = [];
+
+  const parsedFull = graph.tree_sitter_status.full_confidence_files;
+  const parsedLow = graph.tree_sitter_status.low_confidence_files;
+  const parsedTotal = parsedFull + parsedLow;
+  factors.push({
+    label: "Parse confidence",
+    weightPercent: 30,
+    scorePercent: parsedTotal > 0 ? Math.round((parsedFull / parsedTotal) * 100) : 100,
+    detail:
+      parsedTotal > 0
+        ? `${parsedFull.toLocaleString()} of ${parsedTotal.toLocaleString()} files parsed with full structural confidence`
+        : "no source files to parse",
+  });
+
+  const moduleCount = reading.modules.length;
+  const cleanModules = reading.modules.filter((m) => !m.inCycle).length;
+  factors.push({
+    label: "Dependency structure",
+    weightPercent: 25,
+    scorePercent: moduleCount > 0 ? Math.round((cleanModules / moduleCount) * 100) : 100,
+    detail:
+      moduleCount > 0
+        ? `${cleanModules} of ${moduleCount} modules sit outside any circular dependency`
+        : "no modules to assess",
+  });
+
+  const docTotal = docAudit ? docAudit.present.length + docAudit.missing.length : 0;
+  factors.push({
+    label: "Documentation completeness",
+    weightPercent: 25,
+    scorePercent: docAudit && docTotal > 0 ? Math.round((docAudit.present.length / docTotal) * 100) : 0,
+    detail: docAudit
+      ? `${docAudit.present.length} of ${docTotal} project-hygiene checks present`
+      : "not yet audited",
+  });
+
+  const isolated = reading.modules.filter(
+    (m) => m.dependsOn.length === 0 && m.dependedOnBy.length === 0,
+  ).length;
+  factors.push({
+    label: "Module connectivity",
+    weightPercent: 20,
+    scorePercent: moduleCount > 1 ? Math.round(((moduleCount - isolated) / moduleCount) * 100) : 100,
+    detail:
+      moduleCount > 1
+        ? `${moduleCount - isolated} of ${moduleCount} modules are reachable through at least one import`
+        : "single-module system",
+  });
+
+  const totalWeight = factors.reduce((sum, f) => sum + f.weightPercent, 0);
+  const score = Math.round(
+    factors.reduce((sum, f) => sum + f.scorePercent * f.weightPercent, 0) / totalWeight,
+  );
+
+  return { score, factors };
+}
+
+/** A qualitative read of the computed Health Score for the header and
+ * overview card — the number itself still sits one click away in Stats
+ * for nerds (RULES.md: a confidence score's composition is never more
+ * than a click from where the score is shown). */
+export function healthStatusLabel(score: number): "Healthy" | "Needs attention" | "Needs work" {
+  if (score >= 80) return "Healthy";
+  if (score >= 50) return "Needs attention";
+  return "Needs work";
+}
+
 const formatCount = (n: number, singular: string, plural = `${singular}s`) =>
   `${n.toLocaleString()} ${n === 1 ? singular : plural}`;
 
@@ -76,10 +177,90 @@ const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "sev
 const countInProse = (n: number, singular: string, plural = `${singular}s`) =>
   `${n < NUMBER_WORDS.length ? NUMBER_WORDS[n] : n.toLocaleString()} ${n === 1 ? singular : plural}`;
 
+/** The first sentence or two of a README's description, cleaned of the
+ * Markdown furniture that reads as noise in a prose paragraph (badge
+ * images, links, inline code ticks, headings). Extraction only — the words
+ * are the README's own, never rewritten (RULES.md §23). */
+function leadSentences(description: string, maxChars = 260): string {
+  const plain = description
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // badge/screenshot images
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links keep their text
+    .replace(/[`*_>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= maxChars) return plain;
+
+  // Prefer cutting at a sentence end inside the budget; fall back to an
+  // ellipsis rather than truncating mid-word.
+  const window = plain.slice(0, maxChars);
+  const lastStop = Math.max(window.lastIndexOf(". "), window.lastIndexOf("! "), window.lastIndexOf("? "));
+  if (lastStop > maxChars * 0.4) return window.slice(0, lastStop + 1);
+  return `${window.slice(0, window.lastIndexOf(" "))}…`;
+}
+
 const joinLabels = (labels: string[]) =>
   labels.length <= 1
     ? (labels[0] ?? "")
     : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+
+/** The Atlas's plain-language read — three or four sentences, every one
+ * arithmetic over data this same study already produced (stack
+ * detection, module structure, the doc-hygiene audit). Not an LLM call:
+ * a deterministic template over real signals, the same "computed, not
+ * generated" contract as the thesis above (RULES.md §23). */
+export function buildSummary(
+  stack: DetectedStack | null,
+  reading: StudyReading,
+  docAudit: DocAudit | null,
+  readme?: ReadmeExtract | null,
+): string[] {
+  const sentences: string[] = [];
+
+  // What the project says it does, verbatim from its own README, comes
+  // first when there is one — the structural read below is *about* a
+  // codebase, but this is the codebase's own account of its purpose, and no
+  // amount of counting file boundaries substitutes for it. Trimmed to a
+  // lead sentence or two so the summary stays one paragraph; the full
+  // extract is a search result away.
+  const description = readme?.description?.trim();
+  if (description) {
+    sentences.push(leadSentences(description));
+  }
+
+  const frameworkNames = (stack?.frameworks ?? []).map((fw) => fw.name);
+  const topLanguages = (stack?.languages ?? []).slice(0, 2).map((l) => l.name);
+  if (frameworkNames.length > 0) {
+    sentences.push(`This repository contains ${joinLabels(frameworkNames)}.`);
+  } else if (topLanguages.length > 0) {
+    sentences.push(`This repository is written primarily in ${joinLabels(topLanguages)}.`);
+  } else {
+    sentences.push("This study found no recognized language or framework manifests to describe.");
+  }
+
+  const moduleCount = reading.modules.length;
+  const tangled = reading.modules.some((m) => m.inCycle);
+  if (moduleCount <= 1) {
+    sentences.push("The codebase sits behind a single module boundary.");
+  } else if (tangled) {
+    sentences.push("The architecture is modular, though a circular dependency ties part of it together.");
+  } else {
+    sentences.push("The overall architecture is modular and every dependency runs one way.");
+  }
+
+  const missing = docAudit?.missing.length ?? 0;
+  const present = docAudit?.present.length ?? 0;
+  if (docAudit && missing === 0) {
+    sentences.push("Documentation is complete against every check this study runs.");
+  } else if (docAudit) {
+    sentences.push(present === 0 ? "Documentation is missing entirely." : "Documentation is incomplete.");
+  }
+
+  if (docAudit && docAudit.missing.length > 0) {
+    sentences.push(`Adding ${joinLabels(docAudit.missing.slice(0, 2))} would improve maintainability.`);
+  }
+
+  return sentences;
+}
 
 /** Tarjan strongly-connected components — the honest way to find
  * circular dependencies at module level. */

@@ -9,6 +9,7 @@ from functools import lru_cache
 from config import Settings, get_settings
 from integrations.embeddings.base import EmbeddingProvider
 from integrations.embeddings.local_hash import LocalHashEmbeddingProvider
+from integrations.embeddings.nvidia import NvidiaEmbeddingProvider
 from integrations.embeddings.openrouter import OpenRouterEmbeddingProvider
 from models.types import EMBEDDING_DIM
 
@@ -25,9 +26,16 @@ def build_embedding_provider(settings: Settings) -> EmbeddingProvider:
             model=settings.embedding_model,
             dimensions=EMBEDDING_DIM,
         )
+    if settings.embedding_provider == "nvidia":
+        return NvidiaEmbeddingProvider(
+            api_key=settings.nvidia_api_key,
+            model=settings.nvidia_embedding_model,
+            dimensions=EMBEDDING_DIM,
+            base_url=settings.nvidia_base_url,
+        )
     raise ValueError(
         f"Unknown embedding_provider {settings.embedding_provider!r} — "
-        "expected 'local_hash' or 'openrouter'."
+        "expected 'local_hash', 'nvidia', or 'openrouter'."
     )
 
 
