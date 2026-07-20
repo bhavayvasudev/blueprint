@@ -235,34 +235,55 @@ export default async function InsightsPage(props: PageProps<"/repo/[id]/insights
 
             <section className="flex flex-col gap-5">
               <SectionRule>Every module, by weight</SectionRule>
-              <Surface padding="md" className="overflow-x-auto">
-                <table className="w-full min-w-[480px] border-collapse text-sm">
-                  <thead>
-                    <tr className="text-left text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
-                      <th className="pb-3 pr-4 font-medium">Module</th>
-                      <th className="pb-3 pr-4 font-medium">Files</th>
-                      <th className="pb-3 pr-4 font-medium">Depends on</th>
-                      <th className="pb-3 font-medium">Depended on by</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...reading.modules]
-                      .sort((a, b) => b.fileCount - a.fileCount)
-                      .map((module) => (
-                        <tr key={module.id} className="border-t border-ink-950/6 dark:border-white/8">
-                          <td className="py-2.5 pr-4">
-                            <span className="flex items-center gap-2 font-medium text-ink-800 dark:text-ink-200">
-                              {module.label}
-                              {module.inCycle ? <Badge tone="failed">circular</Badge> : null}
-                            </span>
-                          </td>
-                          <td className="py-2.5 pr-4 text-ink-600 dark:text-ink-400">{module.fileCount}</td>
-                          <td className="py-2.5 pr-4 text-ink-600 dark:text-ink-400">{module.dependsOn.length}</td>
-                          <td className="py-2.5 text-ink-600 dark:text-ink-400">{module.dependedOnBy.length}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
+              <Surface padding="none" className="overflow-hidden">
+                <div className="max-h-[28rem] overflow-auto">
+                  <table className="w-full min-w-[520px] border-collapse text-sm">
+                    <thead className="sticky top-0 z-10 bg-[var(--surface)]">
+                      <tr className="text-left text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                        <th className="border-b border-ink-950/8 px-5 py-3 font-medium dark:border-white/8">
+                          Module
+                        </th>
+                        <th className="border-b border-ink-950/8 px-4 py-3 text-right font-medium dark:border-white/8">
+                          Files
+                        </th>
+                        <th className="border-b border-ink-950/8 px-4 py-3 text-right font-medium dark:border-white/8">
+                          Depends on
+                        </th>
+                        <th className="border-b border-ink-950/8 px-5 py-3 text-right font-medium dark:border-white/8">
+                          Depended on by
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...reading.modules]
+                        .sort((a, b) => b.fileCount - a.fileCount)
+                        .map((module, index) => (
+                          <tr
+                            key={module.id}
+                            className={`border-b border-ink-950/6 transition-colors last:border-b-0 hover:bg-ink-950/[0.03] dark:border-white/6 dark:hover:bg-white/[0.04] ${
+                              index % 2 === 1 ? "bg-ink-950/[0.012] dark:bg-white/[0.015]" : ""
+                            }`}
+                          >
+                            <td className="px-5 py-2.5">
+                              <span className="flex items-center gap-2 font-mono text-ink-800 dark:text-ink-200">
+                                {module.label}
+                                {module.inCycle ? <Badge tone="failed">circular</Badge> : null}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono tabular-nums text-ink-600 dark:text-ink-400">
+                              {module.fileCount.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono tabular-nums text-ink-600 dark:text-ink-400">
+                              {module.dependsOn.length}
+                            </td>
+                            <td className="px-5 py-2.5 text-right font-mono tabular-nums text-ink-600 dark:text-ink-400">
+                              {module.dependedOnBy.length}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
               </Surface>
             </section>
 

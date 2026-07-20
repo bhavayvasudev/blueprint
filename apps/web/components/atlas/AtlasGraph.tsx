@@ -2,7 +2,6 @@
 
 import {
   motion,
-  useMotionValue,
   useReducedMotion,
   useSpring,
   useTransform,
@@ -10,151 +9,71 @@ import {
 } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@blueprint/ui";
+import { AtlasBreadcrumb } from "@/components/atlas/AtlasBreadcrumb";
+import { AtlasNodeCard } from "@/components/atlas/AtlasNodeCard";
 import { ModuleName } from "@/components/study/Prose";
 import { IconSearch } from "@/components/workspace/icons";
 import {
-  aggregateEdges,
   ancestorChain,
-  anchorOf,
-  ATLAS_VIEW_H,
-  ATLAS_VIEW_W,
   buildAtlasHierarchy,
   type AtlasHierarchy,
   type AtlasNode,
 } from "@/lib/atlas-hierarchy";
+import {
+  anchorAtLayer,
+  computeLayer,
+  type AtlasLayer,
+  type PositionedNode,
+} from "@/lib/atlas-layout";
 import type { ModuleFacts } from "@/lib/insights";
 
-/** The Atlas — the architectural map, redrawn as a map in the Google
- * Maps sense: countries first, then cities, then streets.
+/** The Atlas — a layered architecture diagram, not a bubble chart.
  *
- * The home view never shows every file, or even every module. It shows
- * the repository's top-level shape — a handful of domains, each a real
- * directory, connected by aggregated import strands. Zooming in is the
- * disclosure gesture: when a container grows past a screen-size
- * threshold it opens and its children appear inside it (domains resolve
- * into modules, modules into folders and files), and zooming back out
- * folds them away again. The level of detail is a pure function of the
- * viewport, so the map adapts continuously and nothing ever has to be
- * expanded by hand — though clicking a closed container zooms the
- * viewport until it opens, which is the same thing spelled as a click.
+ * The old version drew the whole repository at once as a circle-packed
+ * constellation and used continuous pixel-projected zoom as its level
+ * of detail. This version draws exactly one *layer* at a time — the
+ * direct children of whichever container is currently open, laid out
+ * top-to-bottom by real import direction via `@dagrejs/dagre` — and
+ * treats "more detail" as a discrete drill (Repository → Domains →
+ * Modules → Folders → Files), the same grammar an IDE's package
+ * explorer already teaches. `atlas-hierarchy.ts` still owns the real
+ * containment tree and the honest edge-aggregation-to-the-frontier
+ * logic; `atlas-layout.ts` turns whichever slice is open into pixels.
  *
- * Nothing here is generated: the hierarchy is the repository's actual
- * directory tree with the backend's module boundaries marked on it, and
- * every strand between closed containers carries the count of real
- * module-to-module import paths it aggregates. Files never grow edges,
- * because file-level imports are not data this page has — containment
- * is the honest statement.
- *
- * Rendering is bounded regardless of repository size: only children of
- * open containers exist in the DOM, anything outside the viewport or
- * below ~3 screen pixels is culled with its whole subtree, and the
- * hierarchy is laid out exactly once, deterministically, so the same
- * repository always draws the same map. */
+ * Two panes stay one instrument regardless: selecting a module in the
+ * sibling tree (`selectedId`) or a container (`highlightIds`) opens
+ * whatever layer makes it visible and frames it — it does not replace
+ * this view with something else. */
 
-const VIEW_W = ATLAS_VIEW_W;
-const VIEW_H = ATLAS_VIEW_H;
+const VIEW_W = 880;
+const VIEW_H = 600;
 const CX = VIEW_W / 2;
 const CY = VIEW_H / 2;
 
 const MIN_ZOOM = 0.5;
-
-/** Screen-pixel thresholds for the level-of-detail tiers. A container
- * opens when it projects larger than OPEN_PX; labels and metadata
- * arrive at their own sizes. All thresholds are in on-screen pixels so
- * a large domain opens sooner than a small one, exactly like a map. */
-const OPEN_PX = 175;
-const DETAIL_PX = 72;
-const LABEL_PX = 16;
-const MIN_PX = 2.5;
-const CULL_MARGIN = 90;
-/** Hard ceiling on simultaneously rendered nodes — the culling should
- * keep counts far below this; the cap is the seatbelt, not the plan. */
-const MAX_RENDERED = 600;
-
+const MAX_ZOOM = 2.75;
 const VIEW_SPRING = { stiffness: 210, damping: 30, mass: 0.9 } as const;
-
-type Tier = "dot" | "labeled" | "detailed" | "open";
+const FIT_PAD = 44;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** The level-of-detail pass: walk the hierarchy top-down, skip whole
- * subtrees that are off-viewport or too small to see, open containers
- * that project large enough, and stop descending at closed ones. Pure
- * over (viewport, hierarchy), so the same view always renders the same
- * map. Insertion order is parent-before-child, which is also the SVG
- * paint order the renderer relies on. */
-function computeTiers(
-  h: AtlasHierarchy,
-  txv: number,
-  tyv: number,
-  k: number,
-  fit: number,
-): Map<string, Tier> {
-  const tiers = new Map<string, Tier>();
-  const entries: { id: string; px: number }[] = [];
-
-  const visit = (id: string) => {
-    const node = h.byId.get(id);
-    if (!node) return;
-    const vx = node.x * k + txv;
-    const vy = node.y * k + tyv;
-    const vr = node.r * k;
-    if (
-      vx + vr < -CULL_MARGIN ||
-      vx - vr > VIEW_W + CULL_MARGIN ||
-      vy + vr < -CULL_MARGIN ||
-      vy - vr > VIEW_H + CULL_MARGIN
-    ) {
-      return;
-    }
-    const px = vr * fit;
-    if (px < MIN_PX) return;
-    if (node.kind !== "file" && node.childIds.length > 0 && px > OPEN_PX) {
-      tiers.set(id, "open");
-      entries.push({ id, px });
-      for (const childId of node.childIds) visit(childId);
-      return;
-    }
-    tiers.set(id, px > DETAIL_PX ? "detailed" : px > LABEL_PX ? "labeled" : "dot");
-    entries.push({ id, px });
-  };
-
-  for (const id of h.topIds) visit(id);
-
-  if (tiers.size > MAX_RENDERED) {
-    const keep = new Set(
-      [...entries].sort((a, b) => b.px - a.px).slice(0, MAX_RENDERED).map((e) => e.id),
-    );
-    for (const id of [...tiers.keys()]) {
-      if (!keep.has(id)) tiers.delete(id);
-    }
+/** The nearest ancestor(s) of a set of nodes that all share, minus the
+ * nodes themselves — the container whose layer would show every one of
+ * them at once. Used both to resolve a single selection (the common
+ * path of one node) and a container highlight (several modules under a
+ * folder the tree pane selected). */
+function commonContainerPath(hierarchy: AtlasHierarchy, nodeIds: string[]): string[] {
+  const chains = nodeIds.map((id) => ancestorChain(hierarchy, id).slice(0, -1).map((n) => n.id));
+  if (chains.length === 0) return [];
+  let common = [...chains[0]!];
+  for (const chain of chains.slice(1)) {
+    let i = 0;
+    while (i < common.length && i < chain.length && common[i] === chain[i]) i += 1;
+    common = common.slice(0, i);
   }
-  return tiers;
-}
-
-function tiersKey(tiers: Map<string, Tier>): string {
-  let key = "";
-  for (const [id, tier] of tiers) key += `${id}:${tier};`;
-  return key;
-}
-
-/** A gently bowed path between two circles, trimmed to their rims. */
-function edgePath(a: AtlasNode, b: AtlasNode): string {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len;
-  const uy = dy / len;
-  const arrow = clamp(b.r * 0.32, 3.5, 12);
-  const sx = a.x + ux * (a.r + 2);
-  const sy = a.y + uy * (a.r + 2);
-  const ex = b.x - ux * (b.r + arrow + 3);
-  const ey = b.y - uy * (b.r + arrow + 3);
-  const mx = (sx + ex) / 2 - uy * len * 0.08;
-  const my = (sy + ey) / 2 + ux * len * 0.08;
-  return `M ${sx.toFixed(1)} ${sy.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`;
+  return common;
 }
 
 function roleSentence(m: ModuleFacts, keystoneId: string | null): string {
@@ -173,18 +92,6 @@ function roleSentence(m: ModuleFacts, keystoneId: string | null): string {
     : "It both carries and is carried.";
 }
 
-function nodeAriaLabel(node: AtlasNode): string {
-  if (node.kind === "file") return `${node.path} — one file`;
-  if (node.kind === "module") {
-    const m = node.module;
-    return m
-      ? `${node.path}: module, ${m.fileCount} files, imports ${m.dependsOn.length}, imported by ${m.dependedOnBy.length}`
-      : `${node.path}: module`;
-  }
-  const what = node.moduleCount > 0 ? `${node.moduleCount} modules, ` : "";
-  return `${node.path}: ${what}${node.fileCount} files. Activate to zoom in.`;
-}
-
 export function AtlasGraph({
   modules,
   filePaths,
@@ -196,19 +103,12 @@ export function AtlasGraph({
   onSelectPath,
 }: {
   modules: ModuleFacts[];
-  /** Every file path in the study — the map's street level. */
   filePaths: string[];
   keystoneId: string | null;
-  /** The module the explorer is pointing at, or null for the whole map. */
   selectedId: string | null;
-  /** Several modules at once — what a container folder like `apps/`
-   * lights up, since it holds boundaries without being one. */
   highlightIds?: string[];
-  /** What the explorer's current selection means, in the header. */
   contextLabel?: string | null;
   onSelect: (id: string | null) => void;
-  /** A non-module place on the map was chosen — a domain, folder, or
-   * file. The explorer mirrors it so both panes stay one instrument. */
   onSelectPath?: (path: string, isFile: boolean) => void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -216,12 +116,18 @@ export function AtlasGraph({
     () => buildAtlasHierarchy(modules, filePaths, keystoneId),
     [modules, filePaths, keystoneId],
   );
-  const maxZoom = hierarchy.maxZoom;
+
+  // ——— where we are: an open path from the repository root ———
+  const [breadcrumbIds, setBreadcrumbIds] = useState<string[]>([]);
+  const containerId = breadcrumbIds[breadcrumbIds.length - 1] ?? null;
+  const trail = useMemo(
+    () => breadcrumbIds.map((id) => hierarchy.byId.get(id)).filter((n): n is AtlasNode => Boolean(n)),
+    [breadcrumbIds, hierarchy],
+  );
+  const layer = useMemo(() => computeLayer(hierarchy, containerId), [hierarchy, containerId]);
+  const rootLayer = useMemo(() => computeLayer(hierarchy, null), [hierarchy]);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  // Keyboard-focus ring, drawn in SVG — a CSS outline on a <circle>
-  // traces the bounding box, which reads as a broken rectangle.
-  const [focusVisibleId, setFocusVisibleId] = useState<string | null>(null);
 
   // ——— viewport: pan/zoom as springs composed into one transform ———
   const svgRef = useRef<SVGSVGElement>(null);
@@ -233,13 +139,6 @@ export function AtlasGraph({
     ([x, y, k]: number[]) => `translate(${x} ${y}) scale(${k})`,
   );
   const zoomLabel = useTransform(zoom, (k) => `${Math.round(k * 100)}%`);
-
-  /** The letterbox-corrected scale from viewBox units to screen pixels
-   * — the level-of-detail thresholds are in screen pixels, so this is
-   * part of the LOD input, refreshed by resize. A motion value rather
-   * than a ref so event handlers can read it without tripping the
-   * compiler's render-time ref-access rule. */
-  const fitScale = useMotionValue(1);
 
   const setView = useCallback(
     (next: { x: number; y: number; k: number }, jump: boolean) => {
@@ -256,176 +155,86 @@ export function AtlasGraph({
     [tx, ty, zoom, reduceMotion],
   );
 
-  const homeView = useCallback(() => setView({ x: 0, y: 0, k: 1 }, false), [setView]);
-
-  // ——— the level-of-detail state, derived from the viewport ———
-  const [tiers, setTiers] = useState<Map<string, Tier>>(() =>
-    computeTiers(hierarchy, 0, 0, 1, 1),
-  );
-  const tiersKeyRef = useRef(tiersKey(tiers));
-
-  const recompute = useCallback(() => {
-    const next = computeTiers(hierarchy, tx.get(), ty.get(), zoom.get(), fitScale.get());
-    const key = tiersKey(next);
-    if (key !== tiersKeyRef.current) {
-      tiersKeyRef.current = key;
-      setTiers(next);
-    }
-  }, [hierarchy, tx, ty, zoom, fitScale]);
-
-  // Recompute on every viewport frame, deduped through rAF; state only
-  // actually changes when a node crosses a tier threshold or the screen
-  // edge, so zoom frames are almost always render-free.
-  useEffect(() => {
-    let raf = 0;
-    const schedule = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        recompute();
-      });
-    };
-    const unsubs = [tx.on("change", schedule), ty.on("change", schedule), zoom.on("change", schedule)];
-    recompute();
-    return () => {
-      for (const unsub of unsubs) unsub();
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [recompute, tx, ty, zoom]);
-
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const observer = new ResizeObserver(() => {
-      const rect = svg.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        fitScale.set(Math.min(rect.width / VIEW_W, rect.height / VIEW_H));
-        recompute();
-      }
-    });
-    observer.observe(svg);
-    return () => observer.disconnect();
-  }, [recompute, fitScale]);
-
-  const openSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const [id, tier] of tiers) if (tier === "open") set.add(id);
-    return set;
-  }, [tiers]);
-  const openKey = useMemo(() => [...openSet].sort().join("|"), [openSet]);
-  const isOpen = useCallback((id: string) => openSet.has(id), [openSet]);
-
-  // ——— edges, aggregated to the visible frontier ———
-  const edges = useMemo(
-    () =>
-      aggregateEdges(hierarchy, isOpen)
-        .sort((a, b) => b.weight - a.weight)
-        .slice(0, 300),
-    // openKey stands in for isOpen — same information, stable identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hierarchy, openKey],
-  );
-
-  // ——— focus mode: what the map is currently about ———
-  const selectedAnchorId = useMemo(() => {
-    if (!selectedId) return null;
-    const nodeId = hierarchy.nodeIdOfModule.get(selectedId);
-    return nodeId ? anchorOf(hierarchy, nodeId, isOpen) : null;
-  }, [selectedId, hierarchy, isOpen]);
-
-  const highlightAnchorIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const id of highlightIds ?? []) {
-      const nodeId = hierarchy.nodeIdOfModule.get(id);
-      if (nodeId) set.add(anchorOf(hierarchy, nodeId, isOpen));
-    }
-    return set;
-  }, [highlightIds, hierarchy, isOpen]);
-
-  const core = useMemo(() => {
-    if (hoveredId) return new Set([hoveredId]);
-    if (selectedAnchorId) return new Set([selectedAnchorId]);
-    return highlightAnchorIds;
-  }, [hoveredId, selectedAnchorId, highlightAnchorIds]);
-
-  const neighbors = useMemo(() => {
-    const set = new Set<string>();
-    if (core.size === 0) return set;
-    for (const edge of edges) {
-      if (core.has(edge.sourceId)) set.add(edge.targetId);
-      if (core.has(edge.targetId)) set.add(edge.sourceId);
-    }
-    return set;
-  }, [edges, core]);
-
-  // An open shell containing the core must not fade with the unrelated
-  // regions — it is the core's own neighbourhood.
-  const coreAncestors = useMemo(() => {
-    const set = new Set<string>();
-    for (const id of core) {
-      for (const node of ancestorChain(hierarchy, id)) set.add(node.id);
-    }
-    for (const id of core) set.delete(id);
-    return set;
-  }, [core, hierarchy]);
-
-  const focused = core.size > 0;
-
-  // ——— framing ———
-  const frameNodes = useCallback(
-    (nodes: AtlasNode[]) => {
-      if (nodes.length === 0) {
-        homeView();
+  /** Fit one layer's whole bounding box to the viewport — the only
+   * framing move this design needs. Emphasis inside the layer is a
+   * dim/highlight decision (`dimFor`), never a camera decision, so
+   * there is no separate "frame just this node" path to keep in sync
+   * with it. */
+  const fitToLayer = useCallback(
+    (l: AtlasLayer, jump: boolean) => {
+      if (l.nodes.length === 0) {
+        setView({ x: 0, y: 0, k: 1 }, jump);
         return;
       }
-      const pad = 90;
-      const minX = Math.min(...nodes.map((n) => n.x - n.r)) - pad;
-      const maxX = Math.max(...nodes.map((n) => n.x + n.r)) + pad;
-      const minY = Math.min(...nodes.map((n) => n.y - n.r)) - pad;
-      const maxY = Math.max(...nodes.map((n) => n.y + n.r)) + pad;
-      const k = clamp(Math.min(VIEW_W / (maxX - minX), VIEW_H / (maxY - minY)), 0.8, maxZoom);
-      setView(
-        { k, x: CX - ((minX + maxX) / 2) * k, y: CY - ((minY + maxY) / 2) * k },
-        false,
-      );
+      const w = Math.max(l.width, 1);
+      const h = Math.max(l.height, 1);
+      const k = clamp(Math.min((VIEW_W - FIT_PAD * 2) / w, (VIEW_H - FIT_PAD * 2) / h), MIN_ZOOM, MAX_ZOOM);
+      setView({ k, x: CX - (w / 2) * k, y: CY - (h / 2) * k }, jump);
     },
-    [homeView, setView, maxZoom],
+    [setView],
   );
 
-  /** Ease the viewport onto one node at a chosen on-screen size — the
-   * click-to-disclose gesture: target a size past OPEN_PX and the
-   * container will open on arrival. */
-  const frameNode = useCallback(
-    (node: AtlasNode, targetPx: number) => {
-      const fit = fitScale.get() || 1;
-      const k = clamp(targetPx / (node.r * fit), MIN_ZOOM, maxZoom);
-      setView({ k, x: CX - node.x * k, y: CY - node.y * k }, false);
+  const goTo = useCallback(
+    (ids: string[], jump: boolean) => {
+      setBreadcrumbIds(ids);
+      fitToLayer(computeLayer(hierarchy, ids[ids.length - 1] ?? null), jump);
     },
-    [setView, maxZoom, fitScale],
+    [hierarchy, fitToLayer],
   );
 
-  // Selection moves the viewport; hover never does.
+  /** Open a container so its children become the rendered layer — the
+   * drill gesture, whether it came from a card's chevron, a breadcrumb
+   * segment, or the compass. */
+  const enterContainer = useCallback(
+    (id: string | null, jump = false) => {
+      if (id === null) {
+        goTo([], jump);
+        return;
+      }
+      goTo(ancestorChain(hierarchy, id).map((n) => n.id), jump);
+    },
+    [hierarchy, goTo],
+  );
+
+  /** Open whatever container holds `id` so it appears as a card in the
+   * new layer, rather than opening `id` itself. What external selection
+   * (the tree pane, search, a peer stub) always wants. */
+  const revealNode = useCallback(
+    (id: string, jump = false) => {
+      goTo(ancestorChain(hierarchy, id).slice(0, -1).map((n) => n.id), jump);
+    },
+    [hierarchy, goTo],
+  );
+
+  // ——— external focus: the tree pane (or a deep link) pointing here ———
   const focusKey = selectedId ?? (highlightIds ?? []).join(",");
+  const didInitRef = useRef(false);
   useEffect(() => {
-    const anchors = selectedAnchorId ? [selectedAnchorId] : [...highlightAnchorIds];
-    if (anchors.length === 0) {
-      homeView();
-      return;
+    const jump = !didInitRef.current;
+    didInitRef.current = true;
+
+    if (selectedId) {
+      const nodeId = hierarchy.nodeIdOfModule.get(selectedId);
+      if (nodeId) {
+        revealNode(nodeId, jump);
+        return;
+      }
     }
-    const ids = new Set(anchors);
-    for (const edge of edges) {
-      if (ids.has(edge.sourceId)) ids.add(edge.targetId);
-      if (ids.has(edge.targetId)) ids.add(edge.sourceId);
+    if (highlightIds && highlightIds.length > 0) {
+      const nodeIds = highlightIds
+        .map((id) => hierarchy.nodeIdOfModule.get(id))
+        .filter((id): id is string => Boolean(id));
+      if (nodeIds.length > 0) {
+        goTo(commonContainerPath(hierarchy, nodeIds), jump);
+        return;
+      }
     }
-    frameNodes(
-      [...ids]
-        .map((id) => hierarchy.byId.get(id))
-        .filter((n): n is AtlasNode => Boolean(n)),
-    );
-    // `focusKey` collapses the selection to a stable string; the anchors
-    // and edges read the frontier as it stood when the selection changed.
+    // Nothing external to focus: on first paint, center the root layer;
+    // otherwise leave the camera exactly where the user left it — a
+    // cleared selection is not a request to lose your place.
+    if (jump) fitToLayer(layer, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusKey]);
+  }, [focusKey, hierarchy]);
 
   // ——— pointer plumbing (screen → viewBox, wheel zoom, drag pan) ———
   const toViewBox = useCallback((clientX: number, clientY: number) => {
@@ -443,7 +252,7 @@ export function AtlasGraph({
   const zoomBy = useCallback(
     (factor: number, pivot?: { x: number; y: number }, jump = false) => {
       const k0 = zoom.get();
-      const k1 = clamp(k0 * factor, MIN_ZOOM, maxZoom);
+      const k1 = clamp(k0 * factor, MIN_ZOOM, MAX_ZOOM);
       if (k1 === k0) return;
       const p = pivot ?? { x: CX, y: CY };
       const ratio = k1 / k0;
@@ -452,7 +261,7 @@ export function AtlasGraph({
         jump,
       );
     },
-    [setView, tx, ty, zoom, maxZoom],
+    [setView, tx, ty, zoom],
   );
 
   useEffect(() => {
@@ -509,14 +318,12 @@ export function AtlasGraph({
     [onSelect, toViewBox],
   );
 
-  // ——— search in the graph ———
+  // ——— search across the whole hierarchy, independent of the open layer ———
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [pulse, setPulse] = useState<{ id: string; token: number } | null>(null);
 
-  const pulseNode = useCallback((id: string) => {
-    setPulse({ id, token: Date.now() });
-  }, []);
+  const pulseNode = useCallback((id: string) => setPulse({ id, token: Date.now() }), []);
   useEffect(() => {
     if (!pulse) return;
     const timer = setTimeout(() => setPulse(null), 2600);
@@ -535,13 +342,7 @@ export function AtlasGraph({
     for (const node of hierarchy.byId.values()) {
       const name = node.name.toLowerCase();
       const path = node.path.toLowerCase();
-      const score = name.startsWith(q)
-        ? 0
-        : name.includes(q)
-          ? 1
-          : path.includes(q)
-            ? 2
-            : -1;
+      const score = name.startsWith(q) ? 0 : name.includes(q) ? 1 : path.includes(q) ? 2 : -1;
       if (score >= 0) scored.push({ node, score });
     }
     scored.sort(
@@ -554,165 +355,194 @@ export function AtlasGraph({
     return scored.slice(0, 60).map((s) => s.node);
   }, [query, hierarchy, kindRank]);
 
-  const matchedIds = useMemo(() => new Set(searchMatches.map((n) => n.id)), [searchMatches]);
   const searchResults = useMemo(() => searchMatches.slice(0, 8), [searchMatches]);
 
   const goToNode = useCallback(
     (node: AtlasNode) => {
-      if (node.kind === "module") {
-        frameNode(node, OPEN_PX * 0.9);
-        if (node.id !== selectedId) onSelect(node.id);
-      } else if (node.kind === "file") {
-        frameNode(node, 34);
-        onSelectPath?.(node.path, true);
-      } else {
-        frameNode(node, OPEN_PX * 1.5);
-        onSelectPath?.(node.path, false);
-      }
+      revealNode(node.id, false);
       pulseNode(node.id);
     },
-    [frameNode, onSelect, onSelectPath, pulseNode, selectedId],
+    [revealNode, pulseNode],
   );
 
-  // Typing recenters the map onto the best match — highlight is
-  // instant, the flight is debounced so the map doesn't chase every
-  // keystroke through a word.
   useEffect(() => {
     if (query.trim().length < 2 || searchMatches.length === 0) return;
     const best = searchMatches[0]!;
-    const timer = setTimeout(() => {
-      frameNode(
-        best,
-        best.kind === "file" ? 34 : best.kind === "module" ? OPEN_PX * 0.9 : OPEN_PX * 1.5,
-      );
-      pulseNode(best.id);
-    }, 320);
+    const timer = setTimeout(() => goToNode(best), 320);
     return () => clearTimeout(timer);
-    // Flying should re-run when the match changes, not when frameNode's
-    // identity does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchMatches]);
 
-  // ——— node interaction ———
-  const activateNode = useCallback(
-    (node: AtlasNode) => {
+  // ——— card interaction ———
+  const activateCard = useCallback(
+    (entry: PositionedNode) => {
+      if (entry.isPeer) revealNode(entry.id);
+      const node = entry.node;
       if (node.kind === "module") {
         onSelect(node.id === selectedId ? null : node.id);
-        return;
-      }
-      if (node.kind === "file") {
+      } else if (node.kind === "file") {
         onSelectPath?.(node.path, true);
-        pulseNode(node.id);
-        return;
+      } else {
+        onSelectPath?.(node.path, false);
       }
-      // A closed domain or folder: zoom until it opens — the click is
-      // progressive disclosure, and the explorer mirrors the selection.
-      onSelectPath?.(node.path, false);
-      frameNode(node, OPEN_PX * 1.5);
+      pulseNode(entry.id);
     },
-    [onSelect, onSelectPath, frameNode, pulseNode, selectedId],
+    [revealNode, onSelect, onSelectPath, selectedId, pulseNode],
   );
+
+  // ——— focus mode: hover or an external selection lights this layer's core ———
+  // A layer swap can unmount whatever was hovered without a pointer
+  // leave event ever firing for it. Rather than an effect to clear the
+  // stale id, treat it as valid only while it actually names a card in
+  // the layer currently on screen.
+  const hoveredInLayer = hoveredId && layer.nodes.some((n) => n.id === hoveredId) ? hoveredId : null;
+
+  const core = useMemo(() => {
+    const set = new Set<string>();
+    if (hoveredInLayer) {
+      set.add(hoveredInLayer);
+      return set;
+    }
+    if (selectedId) {
+      const nodeId = hierarchy.nodeIdOfModule.get(selectedId);
+      const anchor = nodeId ? anchorAtLayer(hierarchy, containerId, nodeId) : null;
+      if (anchor) set.add(anchor);
+    }
+    if (set.size === 0 && highlightIds) {
+      for (const id of highlightIds) {
+        const nodeId = hierarchy.nodeIdOfModule.get(id);
+        const anchor = nodeId ? anchorAtLayer(hierarchy, containerId, nodeId) : null;
+        if (anchor) set.add(anchor);
+      }
+    }
+    return set;
+  }, [hoveredInLayer, selectedId, highlightIds, hierarchy, containerId]);
+
+  const neighbors = useMemo(() => {
+    const set = new Set<string>();
+    if (core.size === 0) return set;
+    for (const edge of layer.edges) {
+      if (core.has(edge.sourceId)) set.add(edge.targetId);
+      if (core.has(edge.targetId)) set.add(edge.sourceId);
+    }
+    return set;
+  }, [layer.edges, core]);
+
+  const focused = core.size > 0;
+  const dimFor = useCallback(
+    (id: string): number => {
+      if (!focused) return 1;
+      if (core.has(id) || neighbors.has(id)) return 1;
+      return 0.26;
+    },
+    [focused, core, neighbors],
+  );
+
+  const matchedIds = useMemo(() => new Set(searchMatches.map((n) => n.id)), [searchMatches]);
 
   if (modules.length === 0) return null;
 
-  const selectedModule = selectedId
-    ? (modules.find((m) => m.id === selectedId) ?? null)
-    : null;
-  const keystoneAnchorId = keystoneId
+  const selectedModule = selectedId ? (modules.find((m) => m.id === selectedId) ?? null) : null;
+  const keystoneNode = keystoneId
     ? (() => {
         const nodeId = hierarchy.nodeIdOfModule.get(keystoneId);
-        return nodeId ? anchorOf(hierarchy, nodeId, isOpen) : null;
+        return nodeId ? (hierarchy.byId.get(nodeId) ?? null) : null;
       })()
     : null;
+  const keystoneAnchorId =
+    keystoneNode && keystoneId ? anchorAtLayer(hierarchy, containerId, keystoneNode.id) : null;
+  const keystoneCard = keystoneAnchorId
+    ? layer.nodes.find((n) => n.id === keystoneAnchorId)
+    : undefined;
 
-  const renderEntries = [...tiers.entries()];
-  const shellEntries = renderEntries.filter(([, tier]) => tier === "open");
-  const leafEntries = renderEntries.filter(([, tier]) => tier !== "open");
-
-  const dimFor = (id: string): number => {
-    if (!focused) return 1;
-    if (core.has(id)) return 1;
-    if (neighbors.has(id)) return 1;
-    if (coreAncestors.has(id)) return 0.85;
-    // A leaf inside the core's own open container is context, not noise.
-    const node = hierarchy.byId.get(id);
-    if (node?.parentId && (core.has(node.parentId) || coreAncestors.has(node.parentId))) return 0.7;
-    return 0.22;
-  };
+  const pulseEntry = pulse ? layer.nodes.find((n) => n.id === pulse.id) : undefined;
+  const showAllEdgeLabels = layer.edges.length <= 14;
+  const showsFileLayer = layer.nodes.length > 0 && layer.nodes.every((n) => n.tier === "file");
 
   return (
     <div className="glass edge-light relative flex h-full flex-col overflow-hidden rounded-[2rem]">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-ink-950/8 px-5 py-3 dark:border-white/8">
-        <h2 className="shrink-0 text-sm font-medium text-ink-950 dark:text-ink-50">
-          Repository architecture
-        </h2>
+      <div className="flex shrink-0 flex-col gap-2 border-b border-ink-950/8 px-5 py-3 dark:border-white/8">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="shrink-0 text-sm font-medium text-ink-950 dark:text-ink-50">
+            Repository architecture
+          </h2>
 
-        {/* Search lives on the map, not just the explorer: matches light
-            up on the canvas, the viewport flies to the best one, and the
-            landing is marked with a pulse. */}
-        <div className="relative min-w-0 flex-1 max-w-[16rem]">
-          <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400 dark:text-ink-500" />
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && searchResults.length > 0) {
-                event.preventDefault();
-                goToNode(searchResults[0]!);
-              }
-              if (event.key === "Escape") {
-                setQuery("");
-                event.currentTarget.blur();
-              }
-            }}
-            placeholder="Find on the map"
-            aria-label="Find a module, folder, or file on the map"
-            className="w-full rounded-lg border border-ink-950/10 bg-transparent py-1.5 pl-8 pr-2.5 font-mono text-xs text-ink-950 placeholder:text-ink-400 focus:border-accent-500/60 focus:outline-none dark:border-white/12 dark:text-ink-50 dark:placeholder:text-ink-500"
-          />
-          {searchFocused && query.trim().length >= 2 ? (
-            <ul
-              className="glass-strong edge-light absolute left-0 right-0 top-full z-20 mt-1.5 flex max-h-64 flex-col overflow-y-auto rounded-xl p-1"
-              role="listbox"
-              aria-label="Matches on the map"
-            >
-              {searchResults.length === 0 ? (
-                <li className="px-3 py-2 text-xs text-ink-500 dark:text-ink-400">
-                  Nothing on the map matches.
-                </li>
-              ) : (
-                searchResults.map((result) => (
-                  <li key={result.id}>
-                    <button
-                      type="button"
-                      // Fire before blur closes the list.
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        goToNode(result);
-                        setSearchFocused(false);
-                      }}
-                      className="flex w-full items-baseline gap-2 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-ink-950/5 dark:hover:bg-white/8"
-                    >
-                      <span className="min-w-0 truncate font-mono text-xs text-ink-950 dark:text-ink-50">
-                        {result.path}
-                      </span>
-                      <span className="ml-auto shrink-0 text-[10px] text-ink-400 dark:text-ink-500">
-                        {result.kind}
-                      </span>
-                    </button>
+          <div className="relative min-w-0 flex-1 max-w-[16rem]">
+            <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400 dark:text-ink-500" />
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && searchResults.length > 0) {
+                  event.preventDefault();
+                  goToNode(searchResults[0]!);
+                }
+                if (event.key === "Escape") {
+                  setQuery("");
+                  event.currentTarget.blur();
+                }
+              }}
+              placeholder="Find on the map"
+              aria-label="Find a module, folder, or file on the map"
+              className="w-full rounded-lg border border-ink-950/10 bg-transparent py-1.5 pl-8 pr-2.5 font-mono text-xs text-ink-950 placeholder:text-ink-400 focus:border-accent-500/60 focus:outline-none dark:border-white/12 dark:text-ink-50 dark:placeholder:text-ink-500"
+            />
+            {searchFocused && query.trim().length >= 2 ? (
+              <ul
+                className="glass-strong edge-light absolute left-0 right-0 top-full z-20 mt-1.5 flex max-h-64 flex-col overflow-y-auto rounded-xl p-1"
+                role="listbox"
+                aria-label="Matches on the map"
+              >
+                {searchResults.length === 0 ? (
+                  <li className="px-3 py-2 text-xs text-ink-500 dark:text-ink-400">
+                    Nothing on the map matches.
                   </li>
-                ))
-              )}
-            </ul>
-          ) : null}
+                ) : (
+                  searchResults.map((result) => (
+                    <li key={result.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          goToNode(result);
+                          setSearchFocused(false);
+                        }}
+                        className="flex w-full items-baseline gap-2 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-ink-950/5 dark:hover:bg-white/8"
+                      >
+                        <span className="min-w-0 truncate font-mono text-xs text-ink-950 dark:text-ink-50">
+                          {result.path}
+                        </span>
+                        <span className="ml-auto shrink-0 text-[10px] text-ink-400 dark:text-ink-500">
+                          {result.kind}
+                        </span>
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : null}
+          </div>
+
+          <p className="hidden shrink-0 truncate font-mono text-xs text-ink-500 sm:block dark:text-ink-400">
+            {contextLabel ??
+              `${modules.length} modules · ${hierarchy.moduleEdges.length} imports · ${hierarchy.totalFiles.toLocaleString()} files`}
+          </p>
         </div>
 
-        <p className="hidden shrink-0 truncate font-mono text-xs text-ink-500 sm:block dark:text-ink-400">
-          {contextLabel ??
-            `${modules.length} modules · ${hierarchy.moduleEdges.length} imports · ${hierarchy.totalFiles.toLocaleString()} files`}
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <AtlasBreadcrumb trail={trail} onJump={enterContainer} />
+          {keystoneId && !keystoneCard ? (
+            <button
+              type="button"
+              onClick={() => keystoneNode && revealNode(keystoneNode.id)}
+              className="shrink-0 rounded-full bg-accent-500/10 px-2.5 py-1 font-mono text-[11px] text-accent-600 transition-colors hover:bg-accent-500/16 dark:text-accent-400"
+            >
+              Keystone is in {keystoneNode?.name ?? "another domain"} →
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="relative min-h-0 flex-1">
@@ -730,16 +560,9 @@ export function AtlasGraph({
           preserveAspectRatio="xMidYMid meet"
           className="relative block h-full w-full touch-pan-y xl:touch-none"
           role="group"
-          aria-label={`Repository architecture map: ${hierarchy.topIds.length} top-level areas, ${modules.length} modules, ${hierarchy.totalFiles} files. Zoom in to open an area into its modules and files; drag to pan; select a module to trace what it depends on.`}
+          aria-label={`Repository architecture map: ${trail.length > 0 ? `viewing ${trail.map((n) => n.name).join(" / ")}, ` : ""}${layer.nodes.length} items, ${layer.edges.length} import ${layer.edges.length === 1 ? "path" : "paths"}. Open a card's chevron to drill in; use the breadcrumb to go back.`}
           onMouseLeave={() => setHoveredId(null)}
         >
-          <defs>
-            <radialGradient id="atlas-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="var(--color-accent-500)" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="var(--color-accent-500)" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-
           <rect
             x={0}
             y={0}
@@ -754,91 +577,50 @@ export function AtlasGraph({
           />
 
           <motion.g transform={sceneTransform}>
-            {/* Open containers first — the regions the leaves sit inside. */}
-            {shellEntries.map(([id]) => {
-              const node = hierarchy.byId.get(id);
-              if (!node) return null;
-              const labelSize = clamp(node.r * 0.085, 7, 16);
-              const dim = dimFor(id);
-              return (
-                <motion.g
-                  key={id}
-                  initial={reduceMotion ? false : { opacity: 0 }}
-                  animate={{ opacity: dim }}
-                  transition={{ duration: reduceMotion ? 0 : 0.3, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={node.r}
-                    className="fill-accent-500/[0.03] stroke-ink-950/12 dark:fill-accent-400/[0.04] dark:stroke-white/12"
-                    strokeDasharray="3 6"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  {/* An invisible, fatter rim so the boundary is
-                      clickable — selecting a region focuses it without
-                      collapsing anything. */}
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={node.r}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth={14}
-                    vectorEffect="non-scaling-stroke"
-                    pointerEvents="stroke"
-                    className="cursor-pointer"
-                    onClick={() =>
-                      node.kind === "module"
-                        ? onSelect(node.id === selectedId ? null : node.id)
-                        : onSelectPath?.(node.path, false)
-                    }
-                  />
-                  <text
-                    x={node.x}
-                    y={node.y - node.r + labelSize * 1.9}
-                    textAnchor="middle"
-                    fontSize={labelSize}
-                    className="pointer-events-none fill-ink-500 font-mono font-medium dark:fill-ink-400"
-                    stroke="var(--background)"
-                    strokeWidth={labelSize * 0.28}
-                    style={{ paintOrder: "stroke" }}
-                  >
-                    {node.name}
-                    {node.kind === "module" ? " · module" : ""}
-                  </text>
-                </motion.g>
-              );
-            })}
+            {keystoneCard ? (
+              <motion.rect
+                x={keystoneCard.x - keystoneCard.width * 0.18}
+                y={keystoneCard.y - keystoneCard.height * 0.18}
+                width={keystoneCard.width * 1.36}
+                height={keystoneCard.height * 1.36}
+                rx={18}
+                fill="url(#atlas-halo)"
+                animate={
+                  reduceMotion ? undefined : { opacity: [0.7, 1, 0.7] }
+                }
+                transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
+              />
+            ) : null}
 
-            {/* Aggregated import strands between whatever is closed at
-                this level of detail. Width carries the count of real
-                module-to-module import paths inside the strand. */}
-            {edges.map((edge) => {
-              const from = hierarchy.byId.get(edge.sourceId);
-              const to = hierarchy.byId.get(edge.targetId);
-              if (!from || !to) return null;
+            {/* Edges first, so cards paint over their endpoints. */}
+            {layer.edges.map((edge, index) => {
               const touches = focused && (core.has(edge.sourceId) || core.has(edge.targetId));
               const dimmed = focused && !touches;
-              const width = 1 + Math.min(3.5, Math.sqrt(edge.weight) * 0.7);
+              const width = 1.25 + Math.min(3.5, Math.sqrt(edge.weight) * 0.7);
+              const showLabel = showAllEdgeLabels || touches;
               return (
-                <g key={edge.key}>
+                <g key={`${containerId ?? "root"}:${edge.key}`}>
                   <title>
-                    {`${from.path || from.name} → ${to.path || to.name}: ${edge.weight} import ${edge.weight === 1 ? "path" : "paths"}`}
+                    {`${hierarchy.byId.get(edge.sourceId)?.path || hierarchy.byId.get(edge.sourceId)?.name || edge.sourceId} → ${hierarchy.byId.get(edge.targetId)?.path || hierarchy.byId.get(edge.targetId)?.name || edge.targetId}: ${edge.weight} import ${edge.weight === 1 ? "path" : "paths"}${edge.reversed ? " (against the dominant flow — part of a cycle)" : ""}`}
                   </title>
                   <motion.path
-                    d={edgePath(from, to)}
+                    d={edge.path}
                     fill="none"
                     strokeWidth={touches ? width + 0.6 : width}
+                    strokeDasharray={edge.reversed ? "5 4" : undefined}
                     vectorEffect="non-scaling-stroke"
                     className={touches ? "stroke-accent-500" : "stroke-ink-950/20 dark:stroke-white/20"}
                     initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
                     animate={{ pathLength: 1, opacity: dimmed ? 0.14 : 1 }}
-                    transition={{ duration: reduceMotion ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{
+                      duration: reduceMotion ? 0 : 0.5,
+                      delay: reduceMotion ? 0 : Math.min(index * 0.02, 0.4),
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
                   />
-                  {touches && !reduceMotion ? (
+                  {touches && !edge.reversed && !reduceMotion ? (
                     <path
-                      d={edgePath(from, to)}
+                      d={edge.path}
                       fill="none"
                       strokeWidth={width + 1.2}
                       strokeLinecap="round"
@@ -848,226 +630,117 @@ export function AtlasGraph({
                       opacity={0.9}
                     />
                   ) : null}
-                  <EdgeArrow from={from} to={to} active={touches} dimmed={dimmed} />
+                  <polygon
+                    points={edge.arrowPoints}
+                    className={touches ? "fill-accent-500" : "fill-ink-950/25 dark:fill-white/25"}
+                    opacity={dimmed ? 0.14 : 1}
+                  />
+                  {showLabel ? (
+                    <text
+                      x={edge.labelX}
+                      y={edge.labelY}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={9.5}
+                      className={`pointer-events-none font-mono ${touches ? "fill-accent-600 dark:fill-accent-400" : "fill-ink-500 dark:fill-ink-400"}`}
+                      stroke="var(--background)"
+                      strokeWidth={3}
+                      style={{ paintOrder: "stroke", opacity: dimmed ? 0.14 : 1 }}
+                    >
+                      {edge.weight}
+                    </text>
+                  ) : null}
                 </g>
               );
             })}
 
-            {/* The keystone's halo — the system's center of gravity,
-                whichever level of detail currently carries it. */}
-            {keystoneAnchorId && tiers.has(keystoneAnchorId) && tiers.get(keystoneAnchorId) !== "open"
-              ? (() => {
-                  const node = hierarchy.byId.get(keystoneAnchorId);
-                  if (!node) return null;
-                  return (
-                    <motion.circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={node.r * 2.6}
-                      fill="url(#atlas-halo)"
-                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
-                      animate={
-                        reduceMotion ? undefined : { scale: [1, 1.1, 1], opacity: [0.8, 1, 0.8] }
-                      }
-                      transition={{ repeat: Infinity, duration: 7, ease: "easeInOut" }}
-                    />
-                  );
-                })()
-              : null}
+            {layer.nodes.map((entry, index) => {
+              const isSelected =
+                !entry.isPeer &&
+                entry.node.kind === "module" &&
+                selectedId === entry.node.module?.id;
+              const isKeystone = entry.id === keystoneAnchorId;
+              const isCore = core.has(entry.id);
+              const isNeighbor = neighbors.has(entry.id);
+              const isHovered = hoveredId === entry.id;
+              const isMatched = matchedIds.has(entry.id);
+              const drillable = !entry.isPeer && entry.node.kind !== "file" && entry.node.childIds.length > 0;
 
-            {/* The leaves of the current level of detail: closed
-                domains, modules, folders, and files. */}
-            {leafEntries.map(([id, tier]) => {
-              const node = hierarchy.byId.get(id);
-              if (!node) return null;
-              const isCore = core.has(id);
-              const isSelected = id === selectedAnchorId && selectedId !== null;
-              const isKeystone = id === keystoneAnchorId;
-              const isNeighbor = neighbors.has(id);
-              const isMatched = matchedIds.size > 0 && matchedIds.has(id);
-              const dim = dimFor(id);
-              const lit = isCore || id === hoveredId;
-              const isFile = node.kind === "file";
-              const labelSize = isFile
-                ? clamp(node.r * 0.75, 4, 9)
-                : clamp(node.r * 0.22, 6, 20);
-              const metaSize = clamp(node.r * 0.12, 5, 12);
-              const countSize = clamp(node.r * 0.26, 5, 13);
-              const meta =
-                node.kind === "domain" || node.kind === "folder"
-                  ? `${node.moduleCount > 0 ? `${node.moduleCount} ${node.moduleCount === 1 ? "module" : "modules"} · ` : ""}${node.fileCount.toLocaleString()} files`
-                  : node.kind === "module"
-                    ? `${node.fileCount.toLocaleString()} files`
-                    : null;
               return (
-                <motion.g
-                  key={id}
-                  initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: dim, scale: 1 }}
-                  transition={{
-                    opacity: { duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] },
-                    scale: { duration: reduceMotion ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] },
-                  }}
-                  style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                <foreignObject
+                  key={`${containerId ?? "root"}:${entry.id}`}
+                  x={entry.x}
+                  y={entry.y}
+                  width={entry.width}
+                  height={entry.height}
+                  style={{ overflow: "visible" }}
                 >
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={node.r}
-                    tabIndex={isFile && tier === "dot" ? -1 : 0}
-                    role="button"
-                    aria-pressed={isSelected}
-                    aria-label={nodeAriaLabel(node)}
-                    onClick={() => activateNode(node)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        activateNode(node);
+                  <motion.div
+                    initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: reduceMotion ? 0 : 0.28,
+                      delay: reduceMotion ? 0 : Math.min(index * 0.012, 0.3),
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
+                  >
+                    <AtlasNodeCard
+                      node={entry.node}
+                      tier={entry.tier}
+                      width={entry.width}
+                      height={entry.height}
+                      isPeer={entry.isPeer}
+                      isSelected={isSelected}
+                      isKeystone={isKeystone}
+                      isHovered={isHovered}
+                      isCore={isCore}
+                      isNeighbor={isNeighbor}
+                      isMatched={isMatched}
+                      dim={dimFor(entry.id)}
+                      drillable={drillable}
+                      onSelect={() => activateCard(entry)}
+                      onDrill={() => enterContainer(entry.id)}
+                      onHoverChange={(hovering) =>
+                        setHoveredId((prev) => (hovering ? entry.id : prev === entry.id ? null : prev))
                       }
-                    }}
-                    onMouseEnter={() => setHoveredId(id)}
-                    onMouseLeave={() => setHoveredId((prev) => (prev === id ? null : prev))}
-                    onFocus={(event) => {
-                      if (event.currentTarget.matches(":focus-visible")) {
-                        setFocusVisibleId(id);
-                      }
-                      setHoveredId(id);
-                    }}
-                    onBlur={() => {
-                      setFocusVisibleId((prev) => (prev === id ? null : prev));
-                      setHoveredId((prev) => (prev === id ? null : prev));
-                    }}
-                    vectorEffect="non-scaling-stroke"
-                    className={`cursor-pointer outline-none transition-[stroke,filter] duration-200 ${
-                      lit
-                        ? "fill-white stroke-accent-500 drop-shadow-[0_0_14px_rgb(46_107_255/0.45)] dark:fill-ink-800"
-                        : isNeighbor
-                          ? "fill-white/95 stroke-accent-400/70 dark:fill-ink-800/95"
-                          : isFile
-                            ? "fill-white/80 stroke-ink-950/12 hover:stroke-ink-950/35 dark:fill-ink-800/80 dark:stroke-white/12 dark:hover:stroke-white/35"
-                            : node.kind === "module"
-                              ? "fill-white/92 stroke-accent-400/45 hover:stroke-accent-500/80 dark:fill-ink-800/92"
-                              : "fill-white/90 stroke-ink-950/15 hover:stroke-ink-950/40 dark:fill-ink-800/90 dark:stroke-white/15 dark:hover:stroke-white/40"
-                    }`}
-                    strokeWidth={lit ? 2 : 1.25}
-                  />
-                  {isMatched ? (
-                    <circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={node.r * 1.18 + 1}
-                      fill="none"
-                      vectorEffect="non-scaling-stroke"
-                      className="pointer-events-none stroke-accent-500/80"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
                     />
-                  ) : null}
-                  {isSelected ? (
-                    <circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={node.r * 1.14 + 2}
-                      fill="none"
-                      vectorEffect="non-scaling-stroke"
-                      className="pointer-events-none stroke-accent-500/70"
-                      strokeWidth={1.5}
-                    />
-                  ) : null}
-                  {focusVisibleId === id ? (
-                    <circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={node.r * 1.1 + 2}
-                      fill="none"
-                      vectorEffect="non-scaling-stroke"
-                      className="pointer-events-none stroke-accent-500"
-                      strokeWidth={2}
-                    />
-                  ) : null}
-                  {isKeystone && !isFile ? (
-                    <circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={node.r * 1.12 + 1}
-                      fill="none"
-                      vectorEffect="non-scaling-stroke"
-                      className="pointer-events-none stroke-accent-400/50"
-                      strokeWidth={1}
-                      strokeDasharray="3 5"
-                    />
-                  ) : null}
-                  {tier !== "dot" ? (
-                    <text
-                      x={node.x}
-                      y={node.y + node.r + labelSize * 1.35}
-                      textAnchor="middle"
-                      fontSize={labelSize}
-                      className={`pointer-events-none font-mono transition-colors duration-200 ${
-                        lit
-                          ? "fill-ink-950 font-semibold dark:fill-ink-50"
-                          : isNeighbor
-                            ? "fill-ink-800 dark:fill-ink-100"
-                            : "fill-ink-600 dark:fill-ink-300"
-                      }`}
-                      stroke="var(--background)"
-                      strokeWidth={labelSize * 0.3}
-                      style={{ paintOrder: "stroke" }}
-                    >
-                      {node.name}
-                    </text>
-                  ) : null}
-                  {tier === "detailed" && meta ? (
-                    <text
-                      x={node.x}
-                      y={node.y + node.r + labelSize * 1.35 + metaSize * 1.5}
-                      textAnchor="middle"
-                      fontSize={metaSize}
-                      className="pointer-events-none fill-ink-500 font-mono dark:fill-ink-400"
-                      stroke="var(--background)"
-                      strokeWidth={metaSize * 0.3}
-                      style={{ paintOrder: "stroke" }}
-                    >
-                      {meta}
-                    </text>
-                  ) : null}
-                  {!isFile && tier !== "dot" ? (
-                    <text
-                      x={node.x}
-                      y={node.y + countSize * 0.36}
-                      textAnchor="middle"
-                      fontSize={countSize}
-                      className="pointer-events-none fill-ink-500 font-mono dark:fill-ink-400"
-                    >
-                      {node.fileCount}
-                    </text>
-                  ) : null}
-                </motion.g>
+                  </motion.div>
+                </foreignObject>
               );
             })}
 
-            {/* The search pulse — a sonar ping on the node the map just
-                flew to, so the landing spot is unmissable. */}
-            {pulse && tiers.has(pulse.id)
-              ? (() => {
-                  const node = hierarchy.byId.get(pulse.id);
-                  if (!node) return null;
-                  return (
-                    <circle
-                      key={pulse.token}
-                      cx={node.x}
-                      cy={node.y}
-                      r={node.r * 1.35 + 2}
-                      fill="none"
-                      vectorEffect="non-scaling-stroke"
-                      className="graph-node-ripple pointer-events-none stroke-accent-500"
-                      strokeWidth={2}
-                    />
-                  );
-                })()
-              : null}
+            {pulseEntry ? (
+              <rect
+                key={pulse!.token}
+                x={pulseEntry.x - 4}
+                y={pulseEntry.y - 4}
+                width={pulseEntry.width + 8}
+                height={pulseEntry.height + 8}
+                rx={14}
+                fill="none"
+                className="graph-node-ripple pointer-events-none stroke-accent-500"
+                strokeWidth={2}
+              />
+            ) : null}
           </motion.g>
+
+          <defs>
+            <radialGradient id="atlas-halo" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="var(--color-accent-500)" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="var(--color-accent-500)" stopOpacity="0" />
+            </radialGradient>
+          </defs>
         </svg>
+
+        {layer.nodes.length === 0 ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <p className="text-sm text-ink-400 dark:text-ink-500">Nothing further beneath this boundary.</p>
+          </div>
+        ) : showsFileLayer ? (
+          <p className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-ink-950/5 px-3 py-1 text-[11px] text-ink-500 dark:bg-white/8 dark:text-ink-400">
+            Import edges are tracked at module level — files carry membership, not their own imports.
+          </p>
+        ) : null}
 
         {selectedModule ? (
           <ModuleOverlay
@@ -1078,10 +751,8 @@ export function AtlasGraph({
           />
         ) : null}
 
-        {/* The minimap earns its corner only when the map is big enough
-            to get lost in. */}
-        {hierarchy.byId.size > 30 ? (
-          <Minimap hierarchy={hierarchy} tx={tx} ty={ty} zoom={zoom} setView={setView} />
+        {rootLayer.nodes.length > 1 ? (
+          <AtlasCompass rootLayer={rootLayer} activeTopId={breadcrumbIds[0] ?? null} onJump={enterContainer} />
         ) : null}
 
         <ViewControls
@@ -1090,7 +761,7 @@ export function AtlasGraph({
           onZoomOut={() => zoomBy(1 / 1.4)}
           onReset={() => {
             onSelect(null);
-            homeView();
+            enterContainer(null);
           }}
         />
       </div>
@@ -1098,93 +769,49 @@ export function AtlasGraph({
   );
 }
 
-/** The whole world in a corner: the top-level shape plus a viewport
- * rectangle that tracks the springs directly, so it moves every frame
- * without a single React re-render. Click or drag to travel. */
-function Minimap({
-  hierarchy,
-  tx,
-  ty,
-  zoom,
-  setView,
+/** A miniature rendering of the domains layer — always the same layer
+ * this reuses `computeLayer` for, regardless of how deep the main view
+ * has drilled — with the open top-level domain highlighted. There is no
+ * single shared coordinate space spanning every layer any more (the old
+ * minimap's viewport rectangle needed one), so this is a compass rather
+ * than a literal viewport indicator: click a domain to open it. */
+function AtlasCompass({
+  rootLayer,
+  activeTopId,
+  onJump,
 }: {
-  hierarchy: AtlasHierarchy;
-  tx: MotionValue<number>;
-  ty: MotionValue<number>;
-  zoom: MotionValue<number>;
-  setView: (next: { x: number; y: number; k: number }, jump: boolean) => void;
+  rootLayer: AtlasLayer;
+  activeTopId: string | null;
+  onJump: (id: string) => void;
 }) {
-  const rectX = useTransform([tx, zoom], ([t, k]: number[]) => (0 - t) / k);
-  const rectY = useTransform([ty, zoom], ([t, k]: number[]) => (0 - t) / k);
-  const rectW = useTransform(zoom, (k) => VIEW_W / k);
-  const rectH = useTransform(zoom, (k) => VIEW_H / k);
-
-  const ref = useRef<SVGSVGElement>(null);
-  const dragging = useRef(false);
-
-  const travel = useCallback(
-    (clientX: number, clientY: number, jump: boolean) => {
-      const rect = ref.current?.getBoundingClientRect();
-      if (!rect || rect.width === 0) return;
-      const wx = ((clientX - rect.left) / rect.width) * VIEW_W;
-      const wy = ((clientY - rect.top) / rect.height) * VIEW_H;
-      const k = zoom.get();
-      setView({ k, x: VIEW_W / 2 - wx * k, y: VIEW_H / 2 - wy * k }, jump);
-    },
-    [setView, zoom],
-  );
-
+  const pad = 10;
+  const w = Math.max(rootLayer.width, 1);
+  const h = Math.max(rootLayer.height, 1);
   return (
-    <div className="glass-strong edge-light absolute bottom-4 right-4 hidden overflow-hidden rounded-xl p-1 md:block">
+    <div className="glass-strong edge-light absolute bottom-4 right-4 hidden overflow-hidden rounded-xl p-2 md:block">
       <svg
-        ref={ref}
-        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="block h-[6.1rem] w-[9rem] cursor-pointer"
+        viewBox={`${-pad} ${-pad} ${w + pad * 2} ${h + pad * 2}`}
+        className="block h-[6.4rem] w-[9.6rem]"
         role="img"
-        aria-label="Minimap of the whole repository; the rectangle marks the current viewport. Click to travel."
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          dragging.current = true;
-          travel(event.clientX, event.clientY, false);
-        }}
-        onPointerMove={(event) => {
-          if (dragging.current) travel(event.clientX, event.clientY, true);
-        }}
-        onPointerUp={(event) => {
-          dragging.current = false;
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-          }
-        }}
+        aria-label="Domain overview. Select a domain to open it."
       >
-        {hierarchy.topIds.map((id) => {
-          const node = hierarchy.byId.get(id);
-          if (!node) return null;
-          return (
-            <circle
-              key={id}
-              cx={node.x}
-              cy={node.y}
-              r={node.r}
-              className={
-                id === hierarchy.keystoneTopId
-                  ? "fill-accent-500/25 stroke-accent-500/60"
-                  : "fill-ink-950/10 stroke-ink-950/25 dark:fill-white/10 dark:stroke-white/25"
-              }
-              strokeWidth={4}
-            />
-          );
-        })}
-        <motion.rect
-          x={rectX}
-          y={rectY}
-          width={rectW}
-          height={rectH}
-          fill="rgb(46 107 255 / 0.08)"
-          className="stroke-accent-500"
-          strokeWidth={6}
-          rx={8}
-        />
+        {rootLayer.nodes.map((node) => (
+          <rect
+            key={node.id}
+            x={node.x}
+            y={node.y}
+            width={node.width}
+            height={node.height}
+            rx={5}
+            strokeWidth={3}
+            className={
+              node.id === activeTopId
+                ? "cursor-pointer fill-accent-500/25 stroke-accent-500"
+                : "cursor-pointer fill-ink-950/10 stroke-ink-950/25 hover:fill-ink-950/18 dark:fill-white/10 dark:stroke-white/25 dark:hover:fill-white/18"
+            }
+            onClick={() => onJump(node.id)}
+          />
+        ))}
       </svg>
     </div>
   );
@@ -1283,38 +910,6 @@ function ModuleOverlay({
         />
       </dl>
     </motion.aside>
-  );
-}
-
-function EdgeArrow({
-  from,
-  to,
-  active,
-  dimmed,
-}: {
-  from: AtlasNode;
-  to: AtlasNode;
-  active: boolean;
-  dimmed: boolean;
-}) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len;
-  const uy = dy / len;
-  const size = clamp(to.r * 0.32, 3.5, 12);
-  const tipX = to.x - ux * (to.r + 2);
-  const tipY = to.y - uy * (to.r + 2);
-  const baseX = tipX - ux * size;
-  const baseY = tipY - uy * size;
-  const half = size * 0.46;
-  const points = `${tipX},${tipY} ${baseX - uy * half},${baseY + ux * half} ${baseX + uy * half},${baseY - ux * half}`;
-  return (
-    <polygon
-      points={points}
-      className={active ? "fill-accent-500" : "fill-ink-950/25 dark:fill-white/25"}
-      opacity={dimmed ? 0.14 : 1}
-    />
   );
 }
 

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { AvailableRepository, Installation } from "@blueprint/shared-types";
-import { Badge, Button, Surface, Text } from "@blueprint/ui";
+import { Badge, Button, Skeleton, Surface, Text } from "@blueprint/ui";
 import { PUBLIC_API_BASE_URL } from "@/lib/config";
 
 class ApiError extends Error {
@@ -171,9 +171,17 @@ export function ConnectPanel({
       ) : null}
 
       {availableQuery.isLoading ? (
-        <Text size="sm" tone="secondary">
-          Loading repositories…
-        </Text>
+        <ul className="flex flex-col gap-2" aria-label="Loading repositories" aria-busy="true">
+          {Array.from({ length: 3 }, (_, index) => (
+            <li
+              key={index}
+              className="flex items-center justify-between gap-4 rounded-lg border border-ink-100 px-3 py-2 dark:border-ink-800"
+            >
+              <Skeleton variant="line" className="w-40" />
+              <Skeleton variant="line" className="h-7 w-20 rounded-full" />
+            </li>
+          ))}
+        </ul>
       ) : availableQuery.isError ? (
         <div className="flex flex-col items-start gap-2">
           <Text size="sm" className="text-status-failed-deep dark:text-status-failed">

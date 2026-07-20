@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   isSnapshotActive,
@@ -69,7 +69,6 @@ export function RepositoryCard({
   const router = useRouter();
   const reduceMotion = useReducedMotion();
   const [menuOpen, setMenuOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const syncMutation = useMutation({
     mutationFn: () => triggerSync(repository.id),
@@ -129,59 +128,59 @@ export function RepositoryCard({
                 <Badge tone={CONNECTION_TONE[repository.connection_status]}>
                   {repository.connection_status}
                 </Badge>
-                <button
-                  ref={triggerRef}
-                  type="button"
-                  aria-label={`Actions for ${repository.full_name}`}
-                  aria-haspopup="menu"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setMenuOpen((open) => !open);
-                  }}
-                  className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-400 transition-colors hover:rotate-12 hover:bg-ink-950/5 hover:text-ink-800 dark:text-ink-500 dark:hover:bg-white/8 dark:hover:text-ink-200"
+                <Popover
+                  isOpen={menuOpen}
+                  onOpenChange={setMenuOpen}
+                  aria-label={`${repository.full_name} actions`}
+                  width={220}
+                  maxHeight={240}
+                  trigger={
+                    <button
+                      type="button"
+                      aria-label={`Actions for ${repository.full_name}`}
+                      onClick={(event) => {
+                        // The trigger lives inside the card's own <Link> —
+                        // block navigation without touching open state,
+                        // which the popover's press handling already owns.
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-400 transition-colors hover:rotate-12 hover:bg-ink-950/5 hover:text-ink-800 dark:text-ink-500 dark:hover:bg-white/8 dark:hover:text-ink-200"
+                    >
+                      <IconMore className="size-4" />
+                    </button>
+                  }
                 >
-                  <IconMore className="size-4" />
-                </button>
+                  <PopoverItem href={`/repo/${repository.id}`} onSelect={() => setMenuOpen(false)}>
+                    Open in Atlas
+                  </PopoverItem>
+                  {snapshotStatus === "ready" ? (
+                    <PopoverItem href={`/repo/${repository.id}/insights`} onSelect={() => setMenuOpen(false)}>
+                      View Insights
+                    </PopoverItem>
+                  ) : null}
+                  <PopoverDivider />
+                  <PopoverItem
+                    disabled={syncMutation.isPending || isActive}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      syncMutation.mutate();
+                    }}
+                  >
+                    {syncMutation.isPending
+                      ? "Syncing…"
+                      : snapshotStatus === "queued"
+                        ? "Queued…"
+                        : snapshotStatus === "indexing"
+                          ? "Studying…"
+                          : "Sync now"}
+                  </PopoverItem>
+                </Popover>
               </div>
             </div>
           </Surface>
         </Link>
       </Tilt>
-
-      <Popover
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        triggerRef={triggerRef}
-        aria-label={`${repository.full_name} actions`}
-        width={220}
-        maxHeight={240}
-      >
-        <PopoverItem href={`/repo/${repository.id}`} onSelect={() => setMenuOpen(false)}>
-          Open in Atlas
-        </PopoverItem>
-        {snapshotStatus === "ready" ? (
-          <PopoverItem href={`/repo/${repository.id}/insights`} onSelect={() => setMenuOpen(false)}>
-            View Insights
-          </PopoverItem>
-        ) : null}
-        <PopoverDivider />
-        <PopoverItem
-          disabled={syncMutation.isPending || isActive}
-          onSelect={() => {
-            setMenuOpen(false);
-            syncMutation.mutate();
-          }}
-        >
-          {syncMutation.isPending
-            ? "Syncing…"
-            : snapshotStatus === "queued"
-              ? "Queued…"
-              : snapshotStatus === "indexing"
-                ? "Studying…"
-                : "Sync now"}
-        </PopoverItem>
-      </Popover>
     </motion.div>
   );
 }

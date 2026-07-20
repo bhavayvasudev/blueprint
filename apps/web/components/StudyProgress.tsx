@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isSnapshotActive, type PipelineStage, type Snapshot } from "@blueprint/shared-types";
-import { ProportionBar, Reveal, Spinner, StatBlock, Text } from "@blueprint/ui";
+import { Button, ProportionBar, Reveal, Spinner, StatBlock, Text } from "@blueprint/ui";
+import { IconWarning } from "@/components/workspace/icons";
 import { useCancelStudy, useSnapshotPolling, useTriggerSync } from "@/lib/use-snapshot-polling";
 
 // The exact stages `services/pipeline_runner.py` runs today
@@ -193,14 +194,15 @@ export function StudyProgress({
           {" Waiting for "}
           {elapsedLabel(snapshot.created_at, now)}.
         </Text>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-fit"
+          loading={cancelMutation.isPending}
           onClick={() => cancelMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
-          disabled={cancelMutation.isPending}
-          className="w-fit rounded-md border border-ink-200 px-3.5 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50 dark:border-ink-700 dark:text-ink-200 dark:hover:bg-ink-900"
         >
-          {cancelMutation.isPending ? "Cancelling…" : "Cancel this study"}
-        </button>
+          Cancel this study
+        </Button>
       </div>
     );
   }
@@ -214,14 +216,15 @@ export function StudyProgress({
         <Text size="sm" tone="secondary">
           Nothing was kept from the partial run — a half-read repository is not a briefing.
         </Text>
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="sm"
+          className="w-fit"
+          loading={syncMutation.isPending}
           onClick={() => syncMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
-          disabled={syncMutation.isPending}
-          className="w-fit rounded-md bg-ink-950 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-ink-800 disabled:opacity-50 dark:bg-white dark:text-ink-950 dark:hover:bg-ink-100"
         >
-          {syncMutation.isPending ? "Starting…" : "Study it again"}
-        </button>
+          Study it again
+        </Button>
       </div>
     );
   }
@@ -247,18 +250,22 @@ export function StudyProgress({
           {failureSummary}
         </Text>
         {snapshot.error_message ? (
-          <pre className="overflow-x-auto rounded-lg bg-ink-50 px-4 py-3 text-xs text-ink-600 dark:bg-ink-900 dark:text-ink-400">
-            {snapshot.error_message}
-          </pre>
+          <div className="flex items-start gap-2.5 rounded-xl border border-status-failed/20 bg-status-failed/[0.04] px-4 py-3 dark:border-status-failed/25 dark:bg-status-failed/[0.06]">
+            <IconWarning className="mt-0.5 size-4 shrink-0 text-status-failed-deep dark:text-status-failed" />
+            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-status-failed-deep dark:text-status-failed">
+              {snapshot.error_message}
+            </pre>
+          </div>
         ) : null}
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="sm"
+          className="w-fit"
+          loading={syncMutation.isPending}
           onClick={() => syncMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
-          disabled={syncMutation.isPending}
-          className="w-fit rounded-md bg-ink-950 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-ink-800 disabled:opacity-50 dark:bg-white dark:text-ink-950 dark:hover:bg-ink-100"
         >
-          {syncMutation.isPending ? "Retrying…" : "Retry the study"}
-        </button>
+          Retry the study
+        </Button>
       </div>
     );
   }
@@ -301,11 +308,20 @@ export function StudyProgress({
         {STAGE_ORDER.map((stage, index) => {
           const isDone = stageIndex >= 0 && index < stageIndex;
           const isCurrent = stage === snapshot.current_stage;
+          const isConnectorDone = stageIndex >= 0 && index <= stageIndex;
           return (
-            <li key={stage} className="flex items-center gap-3 text-sm">
+            <li key={stage} className="relative flex items-center gap-3 text-sm">
+              {index > 0 ? (
+                <span
+                  aria-hidden
+                  className={`absolute left-2 -top-2.5 h-2.5 w-px transition-colors duration-300 ${
+                    isConnectorDone ? "bg-status-ready/40" : "bg-ink-200 dark:bg-ink-700"
+                  }`}
+                />
+              ) : null}
               <span
                 aria-hidden
-                className={`flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] transition-colors duration-300 ${
+                className={`relative flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] transition-colors duration-300 ${
                   isDone
                     ? "bg-status-ready/15 text-status-ready-deep dark:text-status-ready"
                     : "bg-ink-100 text-ink-400 dark:bg-ink-800 dark:text-ink-500"

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { isSnapshotActive, type Snapshot, type SnapshotStatus } from "@blueprint/shared-types";
 import type { BadgeTone } from "@blueprint/ui";
-import { Badge, Text } from "@blueprint/ui";
+import { Badge, Button, Text } from "@blueprint/ui";
 import { useSnapshotPolling, useTriggerSync } from "@/lib/use-snapshot-polling";
 
 const STATUS_TONE: Record<SnapshotStatus, BadgeTone> = {
@@ -76,11 +76,12 @@ export function SyncTrigger({
           Not yet synced
         </Text>
       )}
-      <button
-        type="button"
-        onClick={() => syncMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
+      <Button
+        variant="primary"
+        size="sm"
         disabled={isSyncing}
-        className="rounded-md bg-ink-950 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-ink-800 disabled:opacity-50 dark:bg-white dark:text-ink-950 dark:hover:bg-ink-100"
+        loading={syncMutation.isPending}
+        onClick={() => syncMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
       >
         {current?.status === "queued"
           ? "Queued…"
@@ -89,7 +90,7 @@ export function SyncTrigger({
             : current
               ? "Sync again"
               : "Sync now"}
-      </button>
+      </Button>
     </div>
   );
 }

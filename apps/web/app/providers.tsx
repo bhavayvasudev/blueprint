@@ -1,6 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ToastProvider } from "@blueprint/ui";
 import { MotionConfig } from "framer-motion";
 import { useState } from "react";
 
@@ -18,7 +19,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => new QueryClient());
   return (
     <QueryClientProvider client={client}>
-      <MotionConfig reducedMotion="user">{children}</MotionConfig>
+      <MotionConfig reducedMotion="user">
+        {children}
+        <ToastProvider />
+      </MotionConfig>
     </QueryClientProvider>
   );
 }

@@ -15,6 +15,9 @@ interface FormValues {
 
 const INITIAL_VALUES: FormValues = { name: "", email: "", company: "", subject: "", message: "" };
 
+const CATEGORIES = ["General", "Bug report", "Feature request", "Security"] as const;
+type Category = (typeof CATEGORIES)[number];
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validate(values: FormValues): Partial<Record<keyof FormValues, string>> {
@@ -41,6 +44,7 @@ function validate(values: FormValues): Partial<Record<keyof FormValues, string>>
 export function ContactForm() {
   const reduceMotion = useReducedMotion();
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
+  const [category, setCategory] = useState<Category>("General");
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -75,14 +79,15 @@ export function ContactForm() {
         </motion.span>
         <h2 className="text-xl font-semibold text-ink-950 dark:text-ink-50">Message sent.</h2>
         <p className="max-w-sm text-sm leading-relaxed text-ink-500 dark:text-ink-400">
-          Thanks, {values.name.split(" ")[0] || "there"} — we&apos;ve got it and will get back to
-          you at {values.email}.
+          Thanks, {values.name.split(" ")[0] || "there"} — your {category.toLowerCase()} note is in,
+          and we&apos;ll get back to you at {values.email}, usually within 1–2 business days.
         </p>
         <Button
           variant="ghost"
           size="md"
           onClick={() => {
             setValues(INITIAL_VALUES);
+            setCategory("General");
             setSubmitted(false);
           }}
           className="mt-2"
@@ -105,6 +110,29 @@ export function ContactForm() {
           noValidate
           className="flex flex-col gap-5"
         >
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-xs font-medium text-ink-700 dark:text-ink-200">
+              What&apos;s this about?
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setCategory(option)}
+                  aria-pressed={category === option}
+                  className={`cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                    category === option
+                      ? "bg-ink-950 text-white dark:bg-white dark:text-ink-950"
+                      : "glass edge-light text-ink-600 hover:text-ink-950 dark:text-ink-300 dark:hover:text-ink-50"
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <Input
               label="Name"

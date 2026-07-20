@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 const PADDING = {
+  none: "", // dense content (tables, code) that pads itself per-cell
   sm: "p-4", // 16px
   md: "p-6", // 24px
   lg: "p-8", // 32px

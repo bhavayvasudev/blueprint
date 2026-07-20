@@ -1,128 +1,38 @@
 "use client";
 
-/* The anchored-overlay primitive — repo switcher, notifications,
- * profile menu, and any future menu/combobox all sit on this. It is a
- * sibling to `overlay.tsx`, not a replacement: Dialog/Drawer/
- * CommandPalette are full-screen layers behind a Scrim and correctly
- * lock page scroll; a popover anchored to a topbar icon must not lock
- * scroll, must position itself against its trigger, and must let a
- * click elsewhere in the topbar pass through to switch menus rather
- * than requiring a first click to dismiss. */
+/* The anchored-overlay primitive — repo switcher, notifications, profile
+ * menu, and card action menus all sit on this. HeroUI's `Popover`
+ * (react-aria-components underneath) owns placement, flipping, focus
+ * trap, outside-click, and Escape-to-close; these classes own the
+ * Blueprint glass look on top (RULES.md §18 — HeroUI provides behavior,
+ * Blueprint keeps the appearance).
+ *
+ * The trigger is an arbitrary custom element (a `motion.button` with its
+ * own hover/tap spring), not HeroUI's own `<Button>`, so it can't
+ * register itself as a press target on its own — `Pressable` is
+ * react-aria's documented answer for exactly this: it clones the press
+ * handlers and ref directly onto its single child with no wrapper DOM
+ * node, so the real `<button>` stays the only element in the tab order. */
+import { Popover as HeroPopover } from "@heroui/react";
+import { Pressable } from "react-aria-components";
+import type { DOMAttributes, ReactElement, ReactNode } from "react";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
+type Align = "start" | "center" | "end";
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function usePopoverPosition(
-  open: boolean,
-  triggerRef: RefObject<HTMLElement | null>,
-  align: "start" | "end",
-  gap: number,
-) {
-  const [style, setStyle] = useState<{ top: number; left?: number; right?: number } | null>(null);
-
-  const recompute = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const margin = 12;
-    if (align === "end") {
-      setStyle({ top: rect.bottom + gap, right: Math.max(margin, window.innerWidth - rect.right) });
-    } else {
-      setStyle({ top: rect.bottom + gap, left: Math.max(margin, rect.left) });
-    }
-  }, [triggerRef, align, gap]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    recompute();
-    window.addEventListener("resize", recompute);
-    window.addEventListener("scroll", recompute, true);
-    return () => {
-      window.removeEventListener("resize", recompute);
-      window.removeEventListener("scroll", recompute, true);
-    };
-  }, [open, recompute]);
-
-  return style;
-}
-
-/** Escape closes, Tab is trapped inside the panel while open, and focus
- * returns to whatever was focused (normally the trigger) on close — the
- * same contract as `useOverlay`, minus the body-scroll lock and the
- * full-screen Scrim, plus a pointerdown-outside listener that ignores
- * the trigger itself (so clicking the trigger toggles, never double
- * fires open+close). */
-function useAnchoredOverlay(
-  open: boolean,
-  onClose: () => void,
-  panelRef: RefObject<HTMLElement | null>,
-  triggerRef: RefObject<HTMLElement | null>,
-) {
-  useEffect(() => {
-    if (!open) return;
-
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel)?.focus();
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab" || !panelRef.current) return;
-      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
-      const firstEl = focusable[0];
-      const lastEl = focusable[focusable.length - 1];
-      if (!firstEl || !lastEl) return;
-      const active = document.activeElement;
-      if (event.shiftKey && (active === firstEl || active === panelRef.current)) {
-        event.preventDefault();
-        lastEl.focus();
-      } else if (!event.shiftKey && active === lastEl) {
-        event.preventDefault();
-        firstEl.focus();
-      }
-    }
-
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target as Node;
-      if (panelRef.current?.contains(target)) return;
-      if (triggerRef.current?.contains(target)) return;
-      onClose();
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("pointerdown", handlePointerDown);
-      previouslyFocused?.focus();
-    };
-  }, [open, onClose, panelRef, triggerRef]);
-}
+const PLACEMENT: Record<Align, "bottom" | "bottom start" | "bottom end"> = {
+  start: "bottom start",
+  center: "bottom",
+  end: "bottom end",
+};
 
 export interface PopoverProps {
-  open: boolean;
-  onClose: () => void;
-  /** The button the popover is anchored to — its own focus-return and
-   * outside-click exclusion target. */
-  triggerRef: RefObject<HTMLElement | null>;
+  /** The trigger — any single focusable custom element. Rendered as-is;
+   * open state and press handling are wired on via `Pressable`. */
+  trigger: ReactElement;
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
   /** Which edge of the trigger the panel's own edge lines up with. */
-  align?: "start" | "end";
+  align?: Align;
   /** Panel width in px; content scrolls internally past `maxHeight`. */
   width?: number;
   maxHeight?: number;
@@ -131,13 +41,12 @@ export interface PopoverProps {
   children: ReactNode;
 }
 
-/** The one anchored-menu shell: glass panel, positioned below its
- * trigger, same enter motion as Dialog/CommandPalette (scale + rise) so
- * every overlay in the workspace arrives the same way. */
+/** The one anchored-menu shell — every anchored menu in the workspace
+ * renders through this so they open, place, and reflow identically. */
 export function Popover({
-  open,
-  onClose,
-  triggerRef,
+  trigger,
+  isOpen,
+  onOpenChange,
   align = "end",
   width = 288,
   maxHeight = 360,
@@ -145,43 +54,27 @@ export function Popover({
   children,
   ...rest
 }: PopoverProps) {
-  const reduceMotion = useReducedMotion();
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const position = usePopoverPosition(open, triggerRef, align, 10);
-
-  useAnchoredOverlay(open, onClose, panelRef, triggerRef);
-
   return (
-    <AnimatePresence>
-      {open && position && (
-        <motion.div
-          ref={panelRef}
-          role="menu"
+    <HeroPopover isOpen={isOpen} onOpenChange={onOpenChange}>
+      {/* `Pressable`'s type only accepts a native-tag element (its cloneElement
+       * works fine with any component that forwards ref + spreads props, which
+       * `motion.button` does — the constraint is stricter than the runtime). */}
+      <Pressable>{trigger as ReactElement<DOMAttributes<HTMLElement>, string>}</Pressable>
+      <HeroPopover.Content
+        placement={PLACEMENT[align]}
+        offset={10}
+        className={`glass-strong edge-light z-40 overflow-hidden rounded-2xl p-0 shadow-none outline-none ${className}`}
+        style={{ width, maxWidth: "calc(100vw - 1.5rem)" }}
+      >
+        <HeroPopover.Dialog
           aria-label={rest["aria-label"]}
-          tabIndex={-1}
-          initial={reduceMotion ? false : { opacity: 0, scale: 0.94, y: -6 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={
-            reduceMotion
-              ? { opacity: 0, transition: { duration: 0 } }
-              : { opacity: 0, scale: 0.96, y: -4, transition: { duration: 0.14, ease: "easeIn" } }
-          }
-          transition={{ type: "spring", stiffness: 420, damping: 28, mass: 0.6 }}
-          style={{
-            position: "fixed",
-            top: position.top,
-            left: position.left,
-            right: position.right,
-            width,
-            maxHeight,
-            transformOrigin: align === "end" ? "top right" : "top left",
-          }}
-          className={`glass-strong edge-light z-40 flex flex-col overflow-hidden rounded-2xl outline-none ${className}`}
+          className="flex flex-col overflow-y-auto p-0 outline-none"
+          style={{ maxHeight }}
         >
-          <div className="overflow-y-auto">{children}</div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          {children}
+        </HeroPopover.Dialog>
+      </HeroPopover.Content>
+    </HeroPopover>
   );
 }
 
@@ -195,7 +88,7 @@ export interface PopoverItemProps {
   disabled?: boolean;
 }
 
-/** One row inside a Popover menu — the shared visual grammar for repo
+/** One row inside a Popover — the shared visual grammar for repo
  * switcher entries, profile menu actions, and notification rows alike. */
 export function PopoverItem({
   icon,
@@ -226,14 +119,14 @@ export function PopoverItem({
 
   if (href) {
     return (
-      <a role="menuitem" href={href} onClick={onSelect} className={className}>
+      <a href={href} onClick={onSelect} className={className}>
         {inner}
       </a>
     );
   }
 
   return (
-    <button role="menuitem" type="button" disabled={disabled} onClick={onSelect} className={className}>
+    <button type="button" disabled={disabled} onClick={onSelect} className={className}>
       {inner}
     </button>
   );

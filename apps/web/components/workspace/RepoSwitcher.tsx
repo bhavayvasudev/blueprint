@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Popover, PopoverDivider, PopoverItem, PopoverSectionLabel } from "@blueprint/ui";
 import type { Repository } from "@blueprint/shared-types";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { repoDisplayName } from "@/lib/format";
 import { IconChevronDown, IconPlus } from "./icons";
 
@@ -28,7 +28,6 @@ export function RepoSwitcher({
   activeRepoId: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const router = useRouter();
 
   const active = repositories.find((repo) => repo.id === activeRepoId) ?? null;
@@ -46,55 +45,55 @@ export function RepoSwitcher({
   }
 
   return (
-    <>
-      <motion.button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        whileHover={{ scale: 1.015 }}
-        whileTap={{ scale: 0.98 }}
-        transition={{ type: "spring", stiffness: 400, damping: 24 }}
-        className="flex max-w-56 items-center gap-2 truncate rounded-full px-3 py-1.5 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-950/5 dark:text-ink-200 dark:hover:bg-white/8"
-      >
-        <span
-          className={`size-1.5 shrink-0 rounded-full ${active ? CONNECTION_DOT[active.connection_status] : "bg-ink-300 dark:bg-ink-600"}`}
-        />
-        <span className="truncate">
-          {active ? repoDisplayName(active.full_name) : "Select repository"}
-        </span>
-        <motion.span
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={{ type: "spring", stiffness: 380, damping: 24 }}
-          className="flex shrink-0"
+    <Popover
+      isOpen={open}
+      onOpenChange={setOpen}
+      align="start"
+      aria-label="Switch repository"
+      trigger={
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 400, damping: 24 }}
+          className="flex max-w-56 items-center gap-2 truncate rounded-full px-3 py-1.5 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-950/5 dark:text-ink-200 dark:hover:bg-white/8"
         >
-          <IconChevronDown className="size-3.5 text-ink-400" />
-        </motion.span>
-      </motion.button>
-
-      <Popover open={open} onClose={() => setOpen(false)} triggerRef={triggerRef} align="start" aria-label="Switch repository">
-        <PopoverSectionLabel>Repositories</PopoverSectionLabel>
-        {repositories.map((repository) => (
-          <PopoverItem
-            key={repository.id}
-            hint={repository.id === activeRepoId ? "Current" : undefined}
-            onSelect={() => {
-              setOpen(false);
-              router.push(`/repo/${repository.id}`);
-            }}
+          <span
+            className={`size-1.5 shrink-0 rounded-full ${active ? CONNECTION_DOT[active.connection_status] : "bg-ink-300 dark:bg-ink-600"}`}
+          />
+          <span className="truncate">
+            {active ? repoDisplayName(active.full_name) : "Select repository"}
+          </span>
+          <motion.span
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 24 }}
+            className="flex shrink-0"
           >
-            <span className="flex items-center gap-2.5">
-              <span className={`size-2 shrink-0 rounded-full ${CONNECTION_DOT[repository.connection_status]}`} />
-              <span className="truncate">{repoDisplayName(repository.full_name)}</span>
-            </span>
-          </PopoverItem>
-        ))}
-        <PopoverDivider />
-        <PopoverItem icon={<IconPlus />} href="/repositories" onSelect={() => setOpen(false)}>
-          Browse all repositories
+            <IconChevronDown className="size-3.5 text-ink-400" />
+          </motion.span>
+        </motion.button>
+      }
+    >
+      <PopoverSectionLabel>Repositories</PopoverSectionLabel>
+      {repositories.map((repository) => (
+        <PopoverItem
+          key={repository.id}
+          hint={repository.id === activeRepoId ? "Current" : undefined}
+          onSelect={() => {
+            setOpen(false);
+            router.push(`/repo/${repository.id}`);
+          }}
+        >
+          <span className="flex items-center gap-2.5">
+            <span className={`size-2 shrink-0 rounded-full ${CONNECTION_DOT[repository.connection_status]}`} />
+            <span className="truncate">{repoDisplayName(repository.full_name)}</span>
+          </span>
         </PopoverItem>
-      </Popover>
-    </>
+      ))}
+      <PopoverDivider />
+      <PopoverItem icon={<IconPlus />} href="/repositories" onSelect={() => setOpen(false)}>
+        Browse all repositories
+      </PopoverItem>
+    </Popover>
   );
 }
