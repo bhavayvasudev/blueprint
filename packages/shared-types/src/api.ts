@@ -7,7 +7,25 @@
 
 export type ConnectionStatus = "connected" | "error" | "revoked";
 export type AccountType = "user" | "organization";
-export type SnapshotStatus = "indexing" | "ready" | "failed";
+/** Mirrors `models.types.SnapshotStatus`.
+ *
+ * `queued` is a real, common state, not an edge case: studies run
+ * concurrently up to a configured worker-pool size and everything beyond it
+ * waits. It is deliberately distinct from `indexing` — a repository nobody
+ * has started reading yet must not claim to be being read.
+ *
+ * `cancelled` is terminal and only ever user-initiated. Kept apart from
+ * `failed` so a study someone stopped on purpose is never presented as a
+ * defect. */
+export type SnapshotStatus = "queued" | "indexing" | "ready" | "failed" | "cancelled";
+
+/** The statuses a study can still leave on its own — what the pollers watch
+ * and what the UI treats as "in flight". */
+export const ACTIVE_SNAPSHOT_STATUSES: readonly SnapshotStatus[] = ["queued", "indexing"];
+
+export function isSnapshotActive(status: SnapshotStatus): boolean {
+  return ACTIVE_SNAPSHOT_STATUSES.includes(status);
+}
 export type PipelineStage =
   | "cloning"
   | "discovering_files"
@@ -142,7 +160,14 @@ export interface Snapshot {
   id: string;
   commit_sha: string | null;
   status: SnapshotStatus;
+  /** When this study was enqueued. Under concurrency this is *not* when
+   * work on it began — see `started_at`. */
   created_at: string;
+  /** When a worker actually claimed this study and began Stage 1. `null`
+   * while `queued`, and on snapshots predating concurrent studies. The gap
+   * from `created_at` is real queue wait, which is why elapsed-time
+   * readouts measure from here and not from creation. */
+  started_at: string | null;
   current_stage: PipelineStage | null;
   stage_started_at: string | null;
   error_message: string | null;
@@ -155,6 +180,11 @@ export interface Snapshot {
    * repository), not a fabricated countdown — null on a repository's
    * first-ever study, when there's nothing honest to estimate from. */
   estimated_total_seconds: number | null;
+  /** Place in the waiting line while `queued`, 1-based, counted from the
+   * real job queue. `null` when this study isn't waiting, or when the queue
+   * couldn't be asked — in which case the UI says it's waiting for a worker
+   * without inventing a position. */
+  queue_position: number | null;
   /** Stage 4's real outcome — how much of the repository is actually
    * searchable. `null` means the snapshot predates repository indexing, which
    * is itself the reason Threads can't answer from it. */

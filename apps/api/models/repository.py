@@ -66,7 +66,22 @@ class RepoSnapshot(Base):
     # resolves the real HEAD sha, not at row-creation time.
     commit_sha: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    status: Mapped[SnapshotStatus] = mapped_column(String, default=SnapshotStatus.INDEXING)
+    status: Mapped[SnapshotStatus] = mapped_column(String, default=SnapshotStatus.QUEUED)
+    # The RQ job this snapshot was enqueued as. Stored so the two questions a
+    # concurrent scheduler has to answer can be answered from real queue state
+    # instead of a timer: "is this waiting job still alive?" (the stall
+    # detector — a queued job that vanished from Redis without a worker ever
+    # claiming it is genuinely lost) and "where is it in line?" (the queue
+    # position the UI shows). Nullable: snapshots created before this column,
+    # and any created if enqueueing itself fails, simply have none.
+    job_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # When a worker actually claimed this snapshot and began Stage 1 — as
+    # distinct from `created_at`, which is when it was enqueued. The gap
+    # between them is real queue wait, and keeping them separate is what
+    # stops a long wait from being charged against the study's own elapsed
+    # time (the historical ETA in `snapshot_service` measures work, not
+    # queueing, or a busy queue would inflate every future estimate).
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The remaining columns exist so a stuck/slow/crashed job is diagnosable
     # from the outside (frontend polling, `psql`) instead of an opaque
     # `indexing` with no further signal — see `models.types.PipelineStage`

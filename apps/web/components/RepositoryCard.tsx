@@ -5,10 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import type { Repository } from "@blueprint/shared-types";
+import {
+  isSnapshotActive,
+  type Repository,
+  type SnapshotStatus,
+} from "@blueprint/shared-types";
+import type { BadgeTone } from "@blueprint/ui";
 import { Badge, Popover, PopoverDivider, PopoverItem, Surface, Text, Tilt } from "@blueprint/ui";
 import { PUBLIC_API_BASE_URL } from "@/lib/config";
 import type { RepositoryFacts } from "@/lib/repository-facts";
+import { useSnapshotPolling } from "@/lib/use-snapshot-polling";
 import { IconMore } from "./workspace/icons";
 
 const CONNECTION_TONE = {
@@ -17,7 +23,21 @@ const CONNECTION_TONE = {
   revoked: "failed",
 } as const;
 
-const SNAPSHOT_TONE = { ready: "ready", indexing: "indexing", failed: "failed" } as const;
+const SNAPSHOT_TONE: Record<SnapshotStatus, BadgeTone> = {
+  queued: "neutral",
+  indexing: "indexing",
+  ready: "ready",
+  failed: "failed",
+  cancelled: "neutral",
+};
+
+const SNAPSHOT_LABEL: Record<SnapshotStatus, string> = {
+  queued: "queued",
+  indexing: "studying",
+  ready: "ready",
+  failed: "failed",
+  cancelled: "cancelled",
+};
 
 async function triggerSync(repositoryId: string): Promise<void> {
   const res = await fetch(`${PUBLIC_API_BASE_URL}/api/v1/repos/${repositoryId}/sync`, {
@@ -31,7 +51,14 @@ async function triggerSync(repositoryId: string): Promise<void> {
  * and (when a study exists) its real top language and parse confidence,
  * never a fabricated health score. Hover lifts, click springs, and a
  * context menu carries only actions the API actually supports (no
- * "disconnect" — that endpoint doesn't exist yet). */
+ * "disconnect" — that endpoint doesn't exist yet).
+ *
+ * Each card follows its own study. `useSnapshotPolling` is keyed by
+ * `[repositoryId, snapshotId]`, so a list of cards produces one independent
+ * poll per repository rather than a single shared "is anything indexing"
+ * flag — which is what lets several repositories show `queued`,
+ * `studying` and `ready` side by side, each moving on its own. A card
+ * whose study fails changes only itself. */
 export function RepositoryCard({
   repository,
   facts,
@@ -49,7 +76,20 @@ export function RepositoryCard({
     onSuccess: () => router.refresh(),
   });
 
-  const snapshotStatus = facts?.snapshotStatus ?? null;
+  // The server-rendered snapshot seeds the poll; the poll is what keeps
+  // this card honest while other repositories are being studied at the
+  // same time.
+  const snapshotQuery = useSnapshotPolling(repository.id, facts?.latestSnapshot ?? null);
+  const snapshot = snapshotQuery.data ?? facts?.latestSnapshot ?? null;
+  const snapshotStatus = snapshot?.status ?? facts?.snapshotStatus ?? null;
+  const isActive = snapshotStatus !== null && isSnapshotActive(snapshotStatus);
+
+  const statusLabel =
+    snapshotStatus === "queued" && snapshot?.queue_position != null
+      ? `queued · #${snapshot.queue_position}`
+      : snapshotStatus
+        ? SNAPSHOT_LABEL[snapshotStatus]
+        : null;
 
   return (
     <motion.div
@@ -80,10 +120,8 @@ export function RepositoryCard({
                   {facts?.confidencePercent !== null && facts?.confidencePercent !== undefined ? (
                     <Badge>{facts.confidencePercent}% confidence</Badge>
                   ) : null}
-                  {snapshotStatus ? (
-                    <Badge tone={SNAPSHOT_TONE[snapshotStatus]}>
-                      {snapshotStatus === "indexing" ? "indexing" : snapshotStatus}
-                    </Badge>
+                  {snapshotStatus && statusLabel ? (
+                    <Badge tone={SNAPSHOT_TONE[snapshotStatus]}>{statusLabel}</Badge>
                   ) : null}
                 </div>
               </div>
@@ -129,13 +167,19 @@ export function RepositoryCard({
         ) : null}
         <PopoverDivider />
         <PopoverItem
-          disabled={syncMutation.isPending || snapshotStatus === "indexing"}
+          disabled={syncMutation.isPending || isActive}
           onSelect={() => {
             setMenuOpen(false);
             syncMutation.mutate();
           }}
         >
-          {syncMutation.isPending ? "Syncing…" : "Sync now"}
+          {syncMutation.isPending
+            ? "Syncing…"
+            : snapshotStatus === "queued"
+              ? "Queued…"
+              : snapshotStatus === "indexing"
+                ? "Studying…"
+                : "Sync now"}
         </PopoverItem>
       </Popover>
     </motion.div>

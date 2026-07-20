@@ -108,6 +108,12 @@ class SnapshotOut(BaseModel):
     commit_sha: str | None
     status: SnapshotStatus
     created_at: datetime
+    # When a worker actually claimed this study, as opposed to when it was
+    # enqueued (`created_at`). Null while it is still `queued`, and on rows
+    # that predate concurrent studies. The gap between the two is real
+    # queue wait, which is why the UI can time a study's own work honestly
+    # rather than counting the wait against it.
+    started_at: datetime | None = None
     # Only meaningful while `status == indexing`/`failed` — see
     # `models.types.PipelineStage`. All nullable: a `ready` snapshot (or one
     # from before this column existed) simply has none of these set.
@@ -134,6 +140,13 @@ class SnapshotOut(BaseModel):
     # (routes that skip `get_snapshot`/`list_snapshots`, e.g. `POST
     # .../sync`'s immediate response, never set it).
     estimated_total_seconds: int | None = None
+    # This study's place in the waiting line, 1-based, counted from the real
+    # queue (`services.snapshot_service._queue_position`) — set only while
+    # `status == queued`, and null when the queue can't be asked, so the UI
+    # can say "waiting for a worker" without inventing a position it does
+    # not know (RULES.md §23). Like `estimated_total_seconds`, a computed
+    # attribute rather than a column.
+    queue_position: int | None = None
 
     model_config = {"from_attributes": True}
 

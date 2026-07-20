@@ -1,3 +1,6 @@
+"use client";
+
+import { Spinner as HeroSpinner } from "@heroui/react";
 import type { ReactNode } from "react";
 
 const SIZES = {
@@ -11,27 +14,19 @@ export interface SpinnerProps {
   className?: string;
 }
 
-/** The one indeterminate-progress glyph (MASTER.md §10) — a true loading
- * indicator, so it is allowed to loop; everything else in the product
- * animates only in response to the user or to real change. Always
- * `aria-hidden`: the accessible loading announcement belongs to the
- * wrapping control (`Loading`, or a Button in its loading state). */
+/** The one indeterminate-progress glyph (MASTER.md §10) — HeroUI's
+ * Spinner in `currentColor`, sized to Blueprint's compact steps. A true
+ * loading indicator, so it is allowed to loop; everything else in the
+ * product animates only in response to the user or to real change.
+ * Always `aria-hidden`: the accessible loading announcement belongs to
+ * the wrapping control (`Loading`, or a Button in its loading state). */
 export function Spinner({ size = "md", className = "" }: SpinnerProps) {
   return (
-    <svg
-      className={`animate-spin ${SIZES[size]} ${className}`}
-      viewBox="0 0 24 24"
-      fill="none"
+    <HeroSpinner
       aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-      <path
-        d="M12 2a10 10 0 0 1 10 10"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
+      color="current"
+      className={`${SIZES[size]} ${className}`}
+    />
   );
 }
 

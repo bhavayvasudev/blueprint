@@ -161,6 +161,23 @@ export function RepositoryExplorer({
     setSelectedIsFile(node.isFile);
   }, []);
 
+  /** The folders that must be open for `path` to have a visible row —
+   * every ancestor directory, plus the folder itself when the selection
+   * is a folder (a place chosen on the map should show its contents). */
+  const expandTo = useCallback(
+    (path: string, isFile: boolean) => {
+      if (path === "." || path === "") return;
+      const parts = path.split("/");
+      const dirDepth = isFile ? parts.length - 1 : parts.length;
+      const paths: string[] = [];
+      for (let depth = 1; depth <= dirDepth; depth += 1) {
+        paths.push(parts.slice(0, depth).join("/"));
+      }
+      explorer.expandPaths(paths);
+    },
+    [explorer],
+  );
+
   /** The graph selecting back into the tree. A node is a module, and a
    * module's label *is* its path, so the two panes share one selection
    * rather than keeping two that can drift. */
@@ -175,8 +192,21 @@ export function RepositoryExplorer({
       if (!picked) return;
       setSelectedPath(picked.label);
       setSelectedIsFile(false);
+      expandTo(picked.label, false);
     },
-    [modules],
+    [modules, expandTo],
+  );
+
+  /** The map choosing a non-module place — a domain, folder, or file.
+   * The tree mirrors it and opens down to the row, so the two panes
+   * stay one instrument at every level of detail. */
+  const selectGraphPath = useCallback(
+    (path: string, isFile: boolean) => {
+      setSelectedPath(path === "" ? null : path);
+      setSelectedIsFile(isFile);
+      expandTo(path, isFile);
+    },
+    [expandTo],
   );
 
   // What the header says while a region is in focus — the selected path
@@ -261,11 +291,13 @@ export function RepositoryExplorer({
       <div className="h-[30rem] sm:h-[38rem] xl:sticky xl:top-24 xl:h-[calc(100vh-16rem)]">
         <AtlasGraph
           modules={modules}
+          filePaths={filePaths}
           keystoneId={keystoneId}
           selectedId={selectedModule?.id ?? null}
           highlightIds={containedModuleIds}
           contextLabel={contextLabel}
           onSelect={selectModuleId}
+          onSelectPath={selectGraphPath}
         />
       </div>
     </div>

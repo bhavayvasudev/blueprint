@@ -27,11 +27,39 @@ class ConnectionStatus(StrEnum):
 
 
 class SnapshotStatus(StrEnum):
-    """ARCHITECTURE.md §11: repo_snapshots.status."""
+    """ARCHITECTURE.md §11: repo_snapshots.status.
 
+    `QUEUED` exists because "waiting for a worker" and "being worked on" are
+    different facts, and collapsing them into `INDEXING` is what made
+    Blueprint unable to study two repositories at once. A snapshot whose job
+    was still sitting in the queue reported `indexing` with no
+    `current_stage`, which is indistinguishable from a snapshot whose worker
+    died before its first stage — so `snapshot_service._mark_stalled_if_needed`
+    correctly applied its 20-second not-started budget and failed it, with
+    the message "the worker process likely crashed or was never running"
+    about a queue that was working exactly as designed. The state is the fix:
+    a queued snapshot is judged against whether its job is still live in the
+    queue, never against a wall clock.
+
+    `CANCELLED` is terminal and user-initiated only — Blueprint never cancels
+    a study on the user's behalf. It is distinct from `FAILED` because a study
+    someone stopped on purpose is not a defect, and reporting it as one would
+    be the same category error `QUEUED` fixes (RULES.md §16: a failure is
+    recorded, never silent — but only a real failure).
+    """
+
+    QUEUED = "queued"
     INDEXING = "indexing"
     READY = "ready"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+#: The statuses a study can still leave under its own power — the set the
+#: pollers, the stall detector and the cancel route all branch on. Kept here
+#: rather than spelled out at each site so adding a future non-terminal state
+#: can't silently miss one of them.
+ACTIVE_SNAPSHOT_STATUSES = frozenset({SnapshotStatus.QUEUED, SnapshotStatus.INDEXING})
 
 
 class PipelineStage(StrEnum):

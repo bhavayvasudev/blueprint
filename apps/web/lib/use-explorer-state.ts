@@ -71,6 +71,9 @@ function subscribe(onChange: () => void): () => void {
 export interface ExplorerControls {
   isExpanded: (path: string) => boolean;
   toggleExpanded: (path: string) => void;
+  /** Open several folders at once without closing anything — what a
+   * selection arriving from the Atlas map uses to reveal its row. */
+  expandPaths: (paths: string[]) => void;
   isPinned: (path: string) => boolean;
   togglePinned: (path: string) => void;
   pinned: string[];
@@ -127,6 +130,21 @@ export function useExplorerState(
     [effectiveExpanded, state.pinned, write],
   );
 
+  const expandPaths = useCallback(
+    (paths: string[]) => {
+      const set = new Set(effectiveExpanded);
+      let changed = false;
+      for (const path of paths) {
+        if (!set.has(path)) {
+          set.add(path);
+          changed = true;
+        }
+      }
+      if (changed) write({ expanded: [...set], pinned: state.pinned });
+    },
+    [effectiveExpanded, state.pinned, write],
+  );
+
   const isPinned = useCallback((path: string) => state.pinned.includes(path), [state.pinned]);
 
   const togglePinned = useCallback(
@@ -141,6 +159,7 @@ export function useExplorerState(
   return {
     isExpanded,
     toggleExpanded,
+    expandPaths,
     isPinned,
     togglePinned,
     pinned: hydrated ? state.pinned : [],

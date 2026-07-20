@@ -14,6 +14,35 @@ a follow-up, not a silent gap.
 references it by dotted path) — it owns its own DB session, since it runs
 in the worker process, not inside a request.
 
+Concurrency and isolation
+-------------------------
+Several studies of different repositories run at once, one per worker in
+`worker.py`'s pool. Nothing below coordinates between them, because there
+is nothing to coordinate: every piece of state one study touches is
+created by, and reachable only from, its own invocation.
+
+  - **Session** — `run_ingestion_job` opens its own `Session` per job and
+    closes it in a `finally`. No session is shared, so no transaction,
+    identity map or rollback crosses between studies.
+  - **Progress** — `progress` and `current_stage` are locals and columns on
+    *this* snapshot's row. There is no module-level progress variable; a
+    second study cannot observe or overwrite the first's counters.
+  - **Working directory** — each run gets its own
+    `tempfile.TemporaryDirectory(prefix="blueprint-clone-")`, a fresh
+    uniquely-named path per call, removed when its `with` block exits. Two
+    clones never share a directory even for the same repository.
+  - **Writes** — every row this function writes is keyed to `snapshot_id`
+    (ARCHITECTURE.md §16, and snapshots are immutable per §2), so no study
+    can write into another's results even by accident.
+  - **Failure** — the `except` block below resolves the failing snapshot by
+    `snapshot_id` and marks only that row. One study failing leaves every
+    concurrent study untouched; RQ isolates the job itself, and on Linux
+    the fork-based worker isolates the process too.
+
+The one genuinely shared resource is the row this job claims, and
+`_claim_snapshot` settles ownership of it atomically before any work
+starts.
+
 Every real stage below is bracketed by `_enter_stage`/`_exit_stage`, which
 commit `current_stage`/`stage_started_at` onto the snapshot row (so a
 separate request polling `GET .../snapshots/{id}` sees live progress, not
@@ -35,6 +64,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from integrations.embeddings.base import EmbeddingProvider
@@ -74,6 +104,32 @@ class CloneFailed(Exception):
     embeds a short-lived installation token (DECISIONS.md ADR-024: "never
     logged, never persisted") and argv is exactly where a naïve
     `CalledProcessError` would leak it."""
+
+
+class SnapshotAlreadyClaimed(Exception):
+    """Another worker already moved this snapshot out of `QUEUED`.
+
+    With a pool of workers rather than one, "exactly one worker runs this
+    job" stops being true by construction and has to be enforced. RQ already
+    guarantees it at the queue level (a job is popped atomically and
+    delivered to one worker), and using the snapshot id as the job id means
+    a repeated `/sync` for the same snapshot cannot even create a second
+    job. This exception is the third and last line: a conditional UPDATE
+    that only succeeds against a row still in `QUEUED`, so even a job
+    delivered twice — a requeue after a worker died holding it, say — can
+    only ever be executed by whichever worker won the row.
+    """
+
+
+class StudyCancelled(Exception):
+    """The user cancelled this study while it was running.
+
+    Raised at a stage boundary by `_raise_if_cancelled`, never mid-stage:
+    the same reasoning as `StageTimeoutExceeded` below — these stages have
+    no safe cancellation point inside them, and tearing one down mid-parse
+    or mid-embed risks partial writes. Handled separately from a failure so
+    a study someone deliberately stopped is not reported as a defect.
+    """
 
 
 class StageTimeoutExceeded(Exception):
@@ -138,7 +194,56 @@ def _clone_repository(clone_url: str, branch: str, dest: Path) -> str:
     return result.stdout.strip()
 
 
+def _claim_snapshot(db: Session, snapshot_id: uuid.UUID) -> None:
+    """Atomically move this snapshot from `QUEUED` to `INDEXING`, or refuse
+    to run it.
+
+    A single conditional UPDATE, evaluated by Postgres under row-level
+    locking — not a read-then-write, which would leave a window between
+    "saw QUEUED" and "wrote INDEXING" for a second worker to see the same
+    QUEUED. `rowcount == 0` means the row was no longer queued when this
+    statement reached it: another worker claimed it, or the user cancelled
+    it before any worker did. Either way this worker must not proceed.
+
+    Committed immediately so the transition is visible to every other
+    session — the API process polling `GET .../snapshots/{id}` reads it
+    through its own connection, and an uncommitted claim would leave the
+    study reported as `queued` for the whole of its first stage.
+    """
+    claimed_at = datetime.now(UTC)
+    result = db.execute(
+        update(RepoSnapshot)
+        .where(
+            RepoSnapshot.id == snapshot_id,
+            RepoSnapshot.status == SnapshotStatus.QUEUED,
+        )
+        .values(status=SnapshotStatus.INDEXING, started_at=claimed_at)
+    )
+    db.commit()
+    if result.rowcount == 0:
+        raise SnapshotAlreadyClaimed(
+            f"snapshot {snapshot_id} was no longer queued when this worker reached it"
+        )
+    logger.info("snapshot=%s event=claimed status=indexing", snapshot_id)
+
+
+def _raise_if_cancelled(db: Session, snapshot: RepoSnapshot) -> None:
+    """Cooperative cancellation, checked at stage boundaries.
+
+    Reads `status` straight from the database rather than trusting the
+    in-session copy: cancellation is written by a *different* process (the
+    API handling the user's request), so this worker's identity map still
+    holds the pre-cancellation value until it is explicitly expired. Without
+    the refresh this check would read its own stale `INDEXING` forever and
+    cancellation would appear to do nothing until the study finished.
+    """
+    db.refresh(snapshot, ["status"])
+    if snapshot.status == SnapshotStatus.CANCELLED:
+        raise StudyCancelled(f"snapshot {snapshot.id} was cancelled")
+
+
 def _enter_stage(db: Session, snapshot: RepoSnapshot, stage: PipelineStage) -> float:
+    _raise_if_cancelled(db, snapshot)
     snapshot.current_stage = stage
     snapshot.stage_started_at = datetime.now(UTC)
     db.commit()
@@ -333,6 +438,12 @@ def run_ingestion_pipeline(
     if snapshot is None:
         raise SnapshotNotFound(f"No snapshot {snapshot_id}")
 
+    # Before any work: take the row, or decline the job. Everything below
+    # this line assumes exactly one worker is running this snapshot, and
+    # this is what makes that true (see `SnapshotAlreadyClaimed`).
+    _claim_snapshot(db, snapshot_id)
+    db.refresh(snapshot)
+
     repository = db.get(Repository, snapshot.repository_id)
     assert repository is not None  # FK guarantees this
 
@@ -510,6 +621,23 @@ def run_ingestion_pipeline(
         repository.last_synced_at = datetime.now(UTC)
         db.commit()
         logger.info("snapshot=%s stage=finalize event=status_changed status=ready", snapshot.id)
+    except StudyCancelled:
+        # Terminal, but not a failure: the user stopped this study on
+        # purpose. The status is already `CANCELLED` (the API wrote it —
+        # that is what `_raise_if_cancelled` observed); all that is left is
+        # to clear the live-progress fields and stamp the end, exactly as
+        # the success and failure paths do. Rows this run already committed
+        # are left in place — they are real, they belong to this snapshot
+        # alone, and a cancelled snapshot is never read as a study result.
+        db.rollback()
+        cancelled_snapshot = db.get(RepoSnapshot, snapshot_id)
+        assert cancelled_snapshot is not None
+        cancelled_snapshot.current_stage = None
+        cancelled_snapshot.stage_started_at = None
+        cancelled_snapshot.completed_at = datetime.now(UTC)
+        db.commit()
+        logger.info("snapshot=%s stage=finalize event=cancelled", snapshot_id)
+        return
     except Exception as exc:
         db.rollback()
         failed_snapshot = db.get(RepoSnapshot, snapshot_id)
@@ -539,5 +667,12 @@ def run_ingestion_job(snapshot_id: str) -> None:
     session = SessionLocal()
     try:
         run_ingestion_pipeline(session, snapshot_id=uuid.UUID(snapshot_id))
+    except SnapshotAlreadyClaimed as exc:
+        # Not an error worth failing the RQ job over: the snapshot is
+        # already being studied by another worker, or was cancelled before
+        # this one reached it. Re-raising would mark the job failed and,
+        # worse, log a stack trace suggesting something went wrong with a
+        # study that is running perfectly in the worker next door.
+        logger.info("declining job: %s", exc)
     finally:
         session.close()

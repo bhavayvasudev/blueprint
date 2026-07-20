@@ -44,3 +44,5 @@ Thumbs.db
 
 infra/secrets/
 *.pem
+# heroui-agents-md
+.heroui-docs/

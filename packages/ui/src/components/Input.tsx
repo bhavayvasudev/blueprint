@@ -1,48 +1,52 @@
 "use client";
 
-import { useId } from "react";
+import {
+  Description,
+  FieldError,
+  Input as HeroInput,
+  Label,
+  TextArea as HeroTextArea,
+  TextField,
+} from "@heroui/react";
 import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
 const FIELD_CLASSES =
   "w-full rounded-md border border-ink-200 bg-white/70 px-3 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 outline-none transition-[border-color,box-shadow] duration-200 focus-visible:border-accent-500 focus-visible:shadow-[0_0_0_4px_rgb(46_107_255/0.14)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-ink-700 dark:bg-ink-900/70 dark:text-ink-50 dark:placeholder:text-ink-500 dark:focus-visible:shadow-[0_0_0_4px_rgb(46_107_255/0.22)]";
 
+const LABEL_CLASSES = "text-xs font-medium text-ink-700 dark:text-ink-200";
+const HINT_CLASSES = "text-xs text-ink-500 dark:text-ink-400";
+const ERROR_CLASSES = "text-xs text-status-failed-deep dark:text-status-failed";
+
+/* Label above, error below the field it belongs to, persistent helper
+ * text — never placeholder-only labels (MASTER.md §12). The id/aria
+ * wiring (label↔field, describedby for hint and error) now comes from
+ * HeroUI's TextField context instead of hand-managed ids. */
 interface FieldShellProps {
-  id: string;
   label: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
   required?: boolean;
-  hintId: string;
-  errorId: string;
   children: ReactNode;
 }
 
-/* Label above, error below the field it belongs to, persistent helper
- * text — never placeholder-only labels (MASTER.md §12). */
-function FieldShell({ id, label, hint, error, required, hintId, errorId, children }: FieldShellProps) {
+function FieldShell({ label, hint, error, required, children }: FieldShellProps) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs font-medium text-ink-700 dark:text-ink-200">
+    <>
+      <Label className={LABEL_CLASSES}>
         {label}
         {required && (
           <span aria-hidden="true" className="ml-0.5 text-status-failed">
             *
           </span>
         )}
-      </label>
+      </Label>
       {children}
       {error ? (
-        <p role="alert" id={errorId} className="text-xs text-status-failed-deep dark:text-status-failed">
-          {error}
-        </p>
+        <FieldError className={ERROR_CLASSES}>{error}</FieldError>
       ) : (
-        hint && (
-          <p id={hintId} className="text-xs text-ink-500 dark:text-ink-400">
-            {hint}
-          </p>
-        )
+        hint && <Description className={HINT_CLASSES}>{hint}</Description>
       )}
-    </div>
+    </>
   );
 }
 
@@ -51,49 +55,41 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: ReactNode;
   /** Persistent helper text below the field. */
   hint?: ReactNode;
-  /** Error message; when set it replaces the hint, announces via
-   * `role="alert"`, and should state cause + how to fix. */
+  /** Error message; when set it replaces the hint, announces to
+   * assistive tech, and should state cause + how to fix. */
   error?: ReactNode;
   /** Module paths, tokens, anything code-shaped renders mono. */
   mono?: boolean;
 }
 
 /** The one text-input primitive (MASTER.md §10/§12): visible label,
- * helper text, error adjacent to the field, accent focus ring. */
+ * helper text, error adjacent to the field, accent focus ring. HeroUI's
+ * TextField carries the association and invalid-state semantics; the
+ * inner input keeps its native props so existing call sites (value,
+ * onChange, onKeyDown…) work unchanged. */
 export function Input({
   label,
   hint,
   error,
   mono = false,
-  id,
   required,
   className = "",
   ...rest
 }: InputProps) {
-  const generatedId = useId();
-  const fieldId = id ?? generatedId;
-  const hintId = `${fieldId}-hint`;
-  const errorId = `${fieldId}-error`;
-
   return (
-    <FieldShell
-      id={fieldId}
-      label={label}
-      hint={hint}
-      error={error}
-      required={required}
-      hintId={hintId}
-      errorId={errorId}
+    <TextField
+      isInvalid={error ? true : undefined}
+      isRequired={required}
+      className="flex flex-col gap-1.5"
     >
-      <input
-        id={fieldId}
-        required={required}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : hint ? hintId : undefined}
-        className={`${FIELD_CLASSES} ${mono ? "font-mono" : ""} ${className}`}
-        {...rest}
-      />
-    </FieldShell>
+      <FieldShell label={label} hint={hint} error={error} required={required}>
+        <HeroInput
+          required={required}
+          className={`${FIELD_CLASSES} ${mono ? "font-mono" : ""} ${className}`}
+          {...rest}
+        />
+      </FieldShell>
+    </TextField>
   );
 }
 
@@ -109,36 +105,25 @@ export function TextArea({
   label,
   hint,
   error,
-  id,
   required,
   rows = 3,
   className = "",
   ...rest
 }: TextAreaProps) {
-  const generatedId = useId();
-  const fieldId = id ?? generatedId;
-  const hintId = `${fieldId}-hint`;
-  const errorId = `${fieldId}-error`;
-
   return (
-    <FieldShell
-      id={fieldId}
-      label={label}
-      hint={hint}
-      error={error}
-      required={required}
-      hintId={hintId}
-      errorId={errorId}
+    <TextField
+      isInvalid={error ? true : undefined}
+      isRequired={required}
+      className="flex flex-col gap-1.5"
     >
-      <textarea
-        id={fieldId}
-        rows={rows}
-        required={required}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : hint ? hintId : undefined}
-        className={`${FIELD_CLASSES} resize-y ${className}`}
-        {...rest}
-      />
-    </FieldShell>
+      <FieldShell label={label} hint={hint} error={error} required={required}>
+        <HeroTextArea
+          rows={rows}
+          required={required}
+          className={`${FIELD_CLASSES} resize-y ${className}`}
+          {...rest}
+        />
+      </FieldShell>
+    </TextField>
   );
 }

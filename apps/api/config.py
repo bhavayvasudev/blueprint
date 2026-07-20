@@ -82,7 +82,36 @@ class Settings(BaseSettings):
     nvidia_max_output_tokens: int = 4096
     nvidia_enable_reasoning: bool = True
 
+    # How many repository studies run at once — the size of `worker.py`'s
+    # pool, and the only knob between "one study at a time" and "as many as
+    # the box can stand". Before this existed the worker was a single
+    # process consuming jobs strictly serially, so a second repository's job
+    # sat in Redis until the first finished (ARCHITECTURE.md §13).
+    #
+    # The default is deliberately small rather than the largest number that
+    # "works". Each worker is a full study: a `git clone`, a Tree-sitter
+    # parse of every source file, and hundreds of embedding requests. Those
+    # contend for three real, shared, finite resources — CPU cores (parsing
+    # is CPU-bound and does not yield), the provider's API rate limit
+    # (clone + status calls), and the embedding provider's concurrency —
+    # none of which get faster by queueing more work against them. Past a
+    # handful of workers every study gets slower without any of them
+    # finishing sooner, which is the CPU-starvation case, so the queue is
+    # the honest place for the surplus to wait. Deployments with more cores
+    # and higher provider limits should raise this; it is env-configurable
+    # (`MAX_CONCURRENT_STUDIES`) precisely so that is a config change.
+    max_concurrent_studies: int = 4
+
     environment: str = "development"
+
+    @property
+    def worker_count(self) -> int:
+        """`max_concurrent_studies`, floored at 1. A pool of zero workers
+        would accept every study and run none of them — every repository
+        would sit in the queue forever, reported as `queued`, which is
+        honest but useless. Misconfiguration degrades to serial execution
+        (the old behaviour) rather than to a silent full stop."""
+        return max(1, self.max_concurrent_studies)
 
 
 @lru_cache

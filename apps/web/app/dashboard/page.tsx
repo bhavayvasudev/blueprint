@@ -238,20 +238,43 @@ function PreStudyBriefing({
     );
   }
 
-  const state: "indexing" | "failed" | "unstudied" =
-    latest?.status === "indexing" ? "indexing" : latest?.status === "failed" ? "failed" : "unstudied";
+  // `queued` and `cancelled` are their own states, not variations on
+  // "indexing" and "failed". A queued repository is not being read yet, and
+  // saying it is would be a claim about work nobody has started; a
+  // cancelled study is not a failure and must not be reported as one.
+  const state: "queued" | "indexing" | "failed" | "cancelled" | "unstudied" =
+    latest?.status === "queued"
+      ? "queued"
+      : latest?.status === "indexing"
+        ? "indexing"
+        : latest?.status === "failed"
+          ? "failed"
+          : latest?.status === "cancelled"
+            ? "cancelled"
+            : "unstudied";
+
+  const queuedHeadline =
+    latest?.queue_position != null
+      ? `${repository.full_name} is queued, position #${latest.queue_position}.`
+      : `${repository.full_name} is queued for study.`;
 
   const headline = {
+    queued: queuedHeadline,
     indexing: `I'm reading ${repository.full_name} now.`,
     failed: `The study of ${repository.full_name} failed.`,
+    cancelled: `The study of ${repository.full_name} was cancelled.`,
     unstudied: `${repository.full_name} is connected, unstudied.`,
   }[state];
 
   const body = {
+    queued:
+      "Every worker is busy with another repository right now. This study begins on its own the moment one frees up — nothing further is needed from you.",
     indexing:
       "Ingesting the repository, building the knowledge graph, rolling files up into modules. This page becomes your briefing the moment the study completes.",
     failed:
       "I don't present conclusions I couldn't compute — there is no read to show. Run the study again and I'll take it from the top.",
+    cancelled:
+      "You stopped this one before it finished, so there's nothing to brief on. Start it again whenever you want the read.",
     unstudied:
       "Run the first study and I'll come back with a considered read of its shape: what carries the weight, what's entangled, and how far to trust me.",
   }[state];

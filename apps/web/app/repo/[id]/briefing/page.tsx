@@ -14,6 +14,7 @@ import {
   listSnapshots,
 } from "@/lib/api";
 import { analyzeGraph } from "@/lib/insights";
+import { studyHeadline } from "@/lib/study-headline";
 
 /** The Briefing for one specific repository — the same executive read
  * the home renders for the most-recent repository, addressed to the
@@ -81,9 +82,10 @@ export default async function RepoBriefingPage(props: PageProps<"/repo/[id]/brie
                 className="text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
                 style={{ textWrap: "balance" }}
               >
-                {latest.status === "failed"
-                  ? "The study failed — there's no briefing to give."
-                  : `I'm reading ${repository.full_name} now.`}
+                {studyHeadline(latest.status, {
+                  subject: repository.full_name,
+                  absent: "there's no briefing to give.",
+                })}
               </h1>
             </Reveal>
             <StudyProgress repositoryId={repository.id} initialSnapshot={latest} />

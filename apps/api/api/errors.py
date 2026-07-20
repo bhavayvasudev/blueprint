@@ -23,7 +23,7 @@ from integrations.github.exceptions import (
 from services.auth_service import SessionConfigError
 from services.installation_service import InstallationNotFound
 from services.repository_connection_service import RepositoryAlreadyConnected, RepositoryNotFound
-from services.snapshot_service import SnapshotNotFound
+from services.snapshot_service import SnapshotNotCancellable, SnapshotNotFound
 from services.thread_service import ThreadNotFound
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(status_code=403, content={"detail": str(exc)})
 
     @app.exception_handler(RepositoryAlreadyConnected)
+    @app.exception_handler(SnapshotNotCancellable)
     def _conflict(request: Request, exc: Exception) -> JSONResponse:
         logger.info("%s %s -> 409: %s", request.method, request.url.path, exc)
         return JSONResponse(status_code=409, content={"detail": str(exc)})

@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { analyzeGraph, type Claim, type Confidence } from "@/lib/insights";
+import { studyHeadline } from "@/lib/study-headline";
 
 const CONFIDENCE_ORDER: Confidence[] = ["measured", "likely", "undetermined"];
 
@@ -275,9 +276,10 @@ export default async function InsightsPage(props: PageProps<"/repo/[id]/insights
           <div className="flex max-w-xl flex-col gap-4">
             <h2 className="text-2xl font-semibold text-ink-950 dark:text-ink-50">
               {latestSnapshot
-                ? latestSnapshot.status === "failed"
-                  ? "The study failed — there's no evidence to show."
-                  : "I'm still reading this repository."
+                ? studyHeadline(latestSnapshot.status, {
+                    subject: "this repository",
+                    absent: "there's no evidence to show.",
+                  })
                 : "No study exists yet."}
             </h2>
             <p className="text-lg leading-relaxed text-ink-500 dark:text-ink-400">

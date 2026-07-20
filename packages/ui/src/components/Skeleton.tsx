@@ -1,3 +1,7 @@
+"use client";
+
+import { Skeleton as HeroSkeleton } from "@heroui/react";
+
 const VARIANTS = {
   /** One line of body text. */
   line: "h-4 rounded-md",
@@ -16,14 +20,15 @@ export interface SkeletonProps {
 
 /** Loading placeholder shaped like the content it stands in for
  * (MASTER.md §10: document-shaped skeletons after 300ms, never blocking
- * spinners). The pulse is a true loading indicator — the one class of
- * animation allowed to loop. Always `aria-hidden`; the region's loading
- * state is announced once by its container, not per bone. */
+ * spinners). HeroUI's Skeleton carries the shimmer (the one class of
+ * animation allowed to loop, and it honors reduced motion); the ink
+ * tones and shapes stay Blueprint's. Always `aria-hidden`; the region's
+ * loading state is announced once by its container, not per bone. */
 export function Skeleton({ variant = "line", className = "" }: SkeletonProps) {
   return (
-    <div
+    <HeroSkeleton
       aria-hidden="true"
-      className={`skeleton-shimmer relative overflow-hidden bg-ink-100 dark:bg-ink-800 ${VARIANTS[variant]} ${className}`}
+      className={`relative overflow-hidden bg-ink-100 dark:bg-ink-800 ${VARIANTS[variant]} ${className}`}
     />
   );
 }

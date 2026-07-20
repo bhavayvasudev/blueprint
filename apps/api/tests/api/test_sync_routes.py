@@ -14,11 +14,13 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.orm import Session
 
 from api.dependencies import SESSION_COOKIE_NAME
+from integrations.queue.rq_queue import JobPresence
 from config import Settings
 from models.graph import GraphEdge, GraphNode
 from models.installation import Installation
 from models.repository import File, Repository, User
 from models.types import AccountType, ConnectionStatus, GraphType, InstallationStatus, StructuralConfidence
+from services import snapshot_service as snapshot_service_module
 from services import sync_service as sync_service_module
 from services.auth_service import create_session_token
 
@@ -67,7 +69,7 @@ def test_sync_without_cookie_returns_401(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_sync_triggers_job_and_creates_indexing_snapshot(
+def test_sync_triggers_job_and_creates_queued_snapshot(
     client: TestClient,
     db_session: Session,
     test_settings: Settings,
@@ -84,8 +86,12 @@ def test_sync_triggers_job_and_creates_indexing_snapshot(
     response = client.post(f"/api/v1/repos/{repository.id}/sync")
     assert response.status_code == 202
     body = response.json()
-    assert body["status"] == "indexing"
+    # `queued`, not `indexing`: the job has been handed to the queue and
+    # nothing is studying it yet. Claiming `indexing` here is what used to
+    # expose a waiting study to the not-started stall budget and fail it.
+    assert body["status"] == "queued"
     assert body["commit_sha"] is None
+    assert body["started_at"] is None
     assert enqueued == [uuid.UUID(body["id"])]
 
     list_response = client.get(f"/api/v1/repos/{repository.id}/snapshots")
@@ -94,7 +100,7 @@ def test_sync_triggers_job_and_creates_indexing_snapshot(
 
     detail_response = client.get(f"/api/v1/repos/{repository.id}/snapshots/{body['id']}")
     assert detail_response.status_code == 200
-    assert detail_response.json()["status"] == "indexing"
+    assert detail_response.json()["status"] == "queued"
 
 
 def test_sync_marks_snapshot_failed_when_queue_unavailable(
@@ -221,3 +227,97 @@ def test_architecture_graph_reflects_persisted_files_and_repository_graph(
     assert node_labels == {".", "service"}
     assert len(body["repository_graph_edges"]) == 1
     assert body["repository_graph_edges"][0]["edge_type"] == "depends_on"
+
+
+def test_two_repositories_can_be_synced_without_either_failing(
+    client: TestClient,
+    db_session: Session,
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The product-level claim, at the route boundary: syncing a second
+    repository while the first is outstanding gives back a real queued
+    snapshot, and neither study disturbs the other.
+
+    Under the old model the second `/sync` succeeded here too — the failure
+    came later, when the second snapshot was read back and the stall
+    detector had already failed it for waiting. So this test reads both
+    snapshots back, which is where the bug actually surfaced.
+    """
+    user = _logged_in_user(client, db_session, test_settings)
+    first = _connected_repository(db_session, user)
+    second = Repository(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        installation_id=first.installation_id,
+        github_repo_id=str(uuid.uuid4()),
+        full_name="acme/gadgets",
+        default_branch="main",
+        private=True,
+        connection_status=ConnectionStatus.CONNECTED,
+    )
+    db_session.add(second)
+    db_session.flush()
+
+    monkeypatch.setattr(sync_service_module, "enqueue_ingestion_job", lambda snapshot_id: str(snapshot_id))
+    # The enqueue above is faked, so the job ids it hands back are not in any
+    # real queue. Pin the queue's answer to LIVE so this test asserts the
+    # route's behaviour rather than re-testing the lost-job detector, which
+    # `tests/services/test_concurrent_studies.py` covers directly.
+    monkeypatch.setattr(snapshot_service_module, "job_presence", lambda job_id: JobPresence.LIVE)
+    monkeypatch.setattr(snapshot_service_module, "job_queue_position", lambda job_id: None)
+
+    first_body = client.post(f"/api/v1/repos/{first.id}/sync").json()
+    second_body = client.post(f"/api/v1/repos/{second.id}/sync").json()
+
+    assert first_body["id"] != second_body["id"]
+    assert first_body["status"] == "queued"
+    assert second_body["status"] == "queued"
+
+    # Read both back — independently, as the two repository cards do.
+    for repository, body in ((first, first_body), (second, second_body)):
+        detail = client.get(f"/api/v1/repos/{repository.id}/snapshots/{body['id']}")
+        assert detail.status_code == 200
+        assert detail.json()["status"] == "queued"
+        assert detail.json()["error_message"] is None
+
+
+def test_cancelling_one_study_does_not_touch_another_repositorys_study(
+    client: TestClient,
+    db_session: Session,
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _logged_in_user(client, db_session, test_settings)
+    first = _connected_repository(db_session, user)
+    second = Repository(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        installation_id=first.installation_id,
+        github_repo_id=str(uuid.uuid4()),
+        full_name="acme/sprockets",
+        default_branch="main",
+        private=True,
+        connection_status=ConnectionStatus.CONNECTED,
+    )
+    db_session.add(second)
+    db_session.flush()
+
+    monkeypatch.setattr(sync_service_module, "enqueue_ingestion_job", lambda snapshot_id: str(snapshot_id))
+    monkeypatch.setattr(snapshot_service_module, "cancel_ingestion_job", lambda job_id: True)
+    monkeypatch.setattr(snapshot_service_module, "job_presence", lambda job_id: JobPresence.LIVE)
+    monkeypatch.setattr(snapshot_service_module, "job_queue_position", lambda job_id: None)
+
+    keep = client.post(f"/api/v1/repos/{first.id}/sync").json()
+    drop = client.post(f"/api/v1/repos/{second.id}/sync").json()
+
+    cancelled = client.post(f"/api/v1/repos/{second.id}/snapshots/{drop['id']}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+    # Cancelling the second study is invisible to the first.
+    still_queued = client.get(f"/api/v1/repos/{first.id}/snapshots/{keep['id']}")
+    assert still_queued.json()["status"] == "queued"
+
+    # And a second cancel of the same study is a 409, not a silent success.
+    assert client.post(f"/api/v1/repos/{second.id}/snapshots/{drop['id']}/cancel").status_code == 409

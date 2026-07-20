@@ -12,12 +12,24 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from integrations.queue.rq_queue import (
+    JobPresence,
+    cancel_ingestion_job,
+    job_presence,
+    job_queue_position,
+)
 from models.graph import GraphEdge, GraphNode
 from models.repository import File, Repository, RepoSnapshot
-from models.types import GraphType, PipelineStage, SnapshotStatus, StructuralConfidence
+from models.types import (
+    ACTIVE_SNAPSHOT_STATUSES,
+    GraphType,
+    PipelineStage,
+    SnapshotStatus,
+    StructuralConfidence,
+)
 from services.pipeline_runner import (
     _CLONE_TIMEOUT_SECONDS,
     _INDEXING_TIMEOUT_SECONDS,
@@ -57,24 +69,75 @@ class SnapshotNotFound(Exception):
     `services.installation_service.InstallationNotFound` for why)."""
 
 
+def _mark_queued_lost_if_needed(db: Session, snapshot: RepoSnapshot) -> RepoSnapshot:
+    """Fails a `QUEUED` snapshot only when the queue itself says its job is
+    gone — never on a timer.
+
+    A queued study has no deadline, and must not have one. With a worker
+    pool and a queue, waiting is the correct, expected state of every study
+    beyond the pool's capacity, and it can legitimately last as long as the
+    studies ahead of it take. The wall-clock budget that used to govern this
+    case (`_NOT_STARTED_STALL_SECONDS`, 20s) is precisely what made a second
+    concurrent study impossible: it fired while the first study was still
+    running, and reported "the worker process likely crashed or was never
+    running" about a worker that was busy and a queue that was fine.
+
+    So the question is no longer "how long has it waited" but "does its job
+    still exist", which `rq_queue.job_presence` answers from real queue
+    state. Only `LOST` — the queue answered and has no record of this job —
+    is grounds to fail it. `UNKNOWN` (Redis unreachable, or no job id on the
+    row) proves nothing and is left alone, because failing every waiting
+    study over a momentary Redis blip would be a far worse error than
+    leaving one honestly-labelled `queued` a little too long.
+    """
+    if snapshot.status != SnapshotStatus.QUEUED:
+        return snapshot
+    if job_presence(snapshot.job_id) != JobPresence.LOST:
+        return snapshot
+
+    logger.warning("snapshot=%s event=queued_job_lost job=%s", snapshot.id, snapshot.job_id)
+    snapshot.status = SnapshotStatus.FAILED
+    snapshot.current_stage = None
+    snapshot.stage_started_at = None
+    snapshot.completed_at = datetime.now(UTC)
+    snapshot.error_message = (
+        "startup: this study was queued but its job is no longer in the queue, so no "
+        "worker will ever pick it up (the queue was flushed, or the job was dropped)"
+    )[:500]
+    db.commit()
+    return snapshot
+
+
 def _mark_stalled_if_needed(db: Session, snapshot: RepoSnapshot) -> RepoSnapshot:
-    """Lazily detects a snapshot whose worker has gone silent — either the
-    job was never picked up, or the worker died mid-stage (a crashed
-    process never reaches `pipeline_runner.py`'s except block, so nothing
-    else marks it `failed`) — and fails it here, on read, rather than
-    leaving the UI polling `indexing` forever (RULES.md §16: a failure is
-    recorded, never silent). Runs on every read of an `indexing` snapshot
-    rather than via a separate monitor process, since nothing here needs
-    sub-poll-interval precision."""
+    """Lazily detects a snapshot whose worker has gone silent — a worker
+    that claimed the row and then died (a crashed process never reaches
+    `pipeline_runner.py`'s except block, so nothing else marks it `failed`)
+    — and fails it here, on read, rather than leaving the UI polling
+    `indexing` forever (RULES.md §16: a failure is recorded, never silent).
+    Runs on every read of an `indexing` snapshot rather than via a separate
+    monitor process, since nothing here needs sub-poll-interval precision.
+
+    Scoped to `INDEXING` only. A `QUEUED` snapshot is not stalled, it is
+    waiting, and it is judged by `_mark_queued_lost_if_needed` against the
+    queue instead — see that function for why a clock is the wrong
+    instrument there.
+
+    The `current_stage is None` branch now means something narrower than it
+    used to: a worker that took the row (so `started_at` is set) but died
+    before committing its first stage. That is a real crash and still gets
+    the tight `_NOT_STARTED_STALL_SECONDS` budget — but the budget is
+    measured from when the worker *claimed* the snapshot, not from when it
+    was created, so time spent queueing is never charged against it.
+    """
     if snapshot.status != SnapshotStatus.INDEXING:
         return snapshot
 
     now = datetime.now(UTC)
     if snapshot.current_stage is None:
-        reference = snapshot.created_at
+        reference = snapshot.started_at or snapshot.created_at
         budget = _NOT_STARTED_STALL_SECONDS
     else:
-        reference = snapshot.stage_started_at or snapshot.created_at
+        reference = snapshot.stage_started_at or snapshot.started_at or snapshot.created_at
         budget = _stage_budget_seconds(snapshot.current_stage) + _STAGE_STALL_GRACE_SECONDS
 
     elapsed = (now - reference).total_seconds()
@@ -119,7 +182,7 @@ def _estimate_total_seconds(db: Session, snapshot: RepoSnapshot) -> int | None:
     if snapshot.status != SnapshotStatus.INDEXING:
         return None
     rows = db.execute(
-        select(RepoSnapshot.created_at, RepoSnapshot.completed_at)
+        select(RepoSnapshot.created_at, RepoSnapshot.started_at, RepoSnapshot.completed_at)
         .where(
             RepoSnapshot.repository_id == snapshot.repository_id,
             RepoSnapshot.status == SnapshotStatus.READY,
@@ -130,14 +193,46 @@ def _estimate_total_seconds(db: Session, snapshot: RepoSnapshot) -> int | None:
     ).all()
     if not rows:
         return None
-    durations = [(completed_at - created_at).total_seconds() for created_at, completed_at in rows]
+    # Measured from when a worker *started* the study, not when it was
+    # enqueued. Under concurrency those differ by however long the queue
+    # was — including a queue wait in the average would mean one busy
+    # afternoon permanently inflated every future estimate for this
+    # repository, and the number is supposed to describe how long studying
+    # it takes, not how busy Blueprint was. `created_at` remains the
+    # fallback for rows studied before `started_at` existed.
+    durations = [
+        (completed_at - (started_at or created_at)).total_seconds()
+        for created_at, started_at, completed_at in rows
+    ]
     return int(round(sum(durations) / len(durations)))
 
 
-def _attach_estimate(db: Session, snapshot: RepoSnapshot) -> RepoSnapshot:
-    # A plain instance attribute, not a mapped column — `SnapshotOut`
-    # reads it via Pydantic's `from_attributes`, same as any other field.
+def _queue_position(snapshot: RepoSnapshot) -> int | None:
+    """How many studies are ahead of this one, 1-based — a real count from
+    the queue, only for a snapshot that is actually waiting. `None` for
+    every other status, and for a queued job the queue can't be asked
+    about; the UI says "waiting for a worker" without a number rather than
+    inventing one (RULES.md §23)."""
+    if snapshot.status != SnapshotStatus.QUEUED:
+        return None
+    return job_queue_position(snapshot.job_id)
+
+
+def _decorate(db: Session, snapshot: RepoSnapshot) -> RepoSnapshot:
+    """Everything a read of one snapshot needs beyond its columns: settle
+    whether it is still really alive, then attach the two computed fields.
+
+    Both liveness checks run, in order, and each is a no-op for a status it
+    doesn't own — `_mark_queued_lost_if_needed` only judges `QUEUED`,
+    `_mark_stalled_if_needed` only judges `INDEXING`. Ordering them this way
+    means a snapshot claimed by a worker between the two calls is judged by
+    the stall detector on the same read, rather than escaping both.
+    """
+    snapshot = _mark_stalled_if_needed(db, _mark_queued_lost_if_needed(db, snapshot))
+    # Plain instance attributes, not mapped columns — `SnapshotOut` reads
+    # them via Pydantic's `from_attributes`, same as any other field.
     snapshot.estimated_total_seconds = _estimate_total_seconds(db, snapshot)  # type: ignore[attr-defined]
+    snapshot.queue_position = _queue_position(snapshot)  # type: ignore[attr-defined]
     return snapshot
 
 
@@ -151,7 +246,7 @@ def list_snapshots(db: Session, *, repository: Repository) -> list[RepoSnapshot]
         .scalars()
         .all()
     )
-    return [_attach_estimate(db, _mark_stalled_if_needed(db, snapshot)) for snapshot in snapshots]
+    return [_decorate(db, snapshot) for snapshot in snapshots]
 
 
 def latest_ready_snapshot(db: Session, *, repository: Repository) -> RepoSnapshot | None:
@@ -178,7 +273,55 @@ def get_snapshot(db: Session, *, repository: Repository, snapshot_id: uuid.UUID)
     ).scalar_one_or_none()
     if snapshot is None:
         raise SnapshotNotFound(f"No snapshot {snapshot_id} for this repository")
-    return _attach_estimate(db, _mark_stalled_if_needed(db, snapshot))
+    return _decorate(db, snapshot)
+
+
+class SnapshotNotCancellable(Exception):
+    """This snapshot has already reached a terminal status — there is
+    nothing left to cancel. Surfaced as 409, not silently accepted: telling
+    a user their finished study was cancelled would be a false report of
+    what happened (RULES.md §8)."""
+
+
+def cancel_snapshot(db: Session, *, repository: Repository, snapshot_id: uuid.UUID) -> RepoSnapshot:
+    """Stops one study, and only that study.
+
+    Two halves, in this order. First the row is moved to `CANCELLED` under
+    the same conditional-UPDATE discipline `pipeline_runner._claim_snapshot`
+    uses — `rowcount == 0` means it reached a terminal status first, so the
+    request is refused rather than overwriting a real result. Doing this
+    *before* touching the queue is what closes the race with a worker about
+    to claim it: `_claim_snapshot` only promotes rows still in `QUEUED`, so
+    once this UPDATE commits, no worker can start the study, and one already
+    running observes the new status at its next stage boundary
+    (`_raise_if_cancelled`).
+
+    Then the queue is told, which matters only for a job still waiting —
+    removing it means no worker ever wakes up for a study that has already
+    been called off. A failure to reach Redis here is logged and tolerated:
+    the database is authoritative, and a worker that picks up the orphaned
+    job will decline it at the claim.
+    """
+    snapshot = get_snapshot(db, repository=repository, snapshot_id=snapshot_id)
+
+    result = db.execute(
+        update(RepoSnapshot)
+        .where(
+            RepoSnapshot.id == snapshot.id,
+            RepoSnapshot.status.in_(tuple(ACTIVE_SNAPSHOT_STATUSES)),
+        )
+        .values(status=SnapshotStatus.CANCELLED, completed_at=datetime.now(UTC))
+    )
+    db.commit()
+    if result.rowcount == 0:
+        raise SnapshotNotCancellable(
+            f"This study is already {snapshot.status} and cannot be cancelled"
+        )
+
+    cancel_ingestion_job(snapshot.job_id)
+    logger.info("snapshot=%s event=cancelled job=%s", snapshot.id, snapshot.job_id)
+    db.refresh(snapshot)
+    return _decorate(db, snapshot)
 
 
 @dataclass

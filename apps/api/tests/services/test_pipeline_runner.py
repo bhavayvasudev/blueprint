@@ -360,3 +360,85 @@ def test_run_ingestion_pipeline_raises_for_unknown_snapshot(db_session: Session)
 
     with pytest.raises(SnapshotNotFound):
         run_ingestion_pipeline(db_session, snapshot_id=uuid.uuid4(), provider=FakeRepositoryProvider("x"))
+
+
+def test_a_failing_study_leaves_a_concurrent_study_of_another_repository_intact(
+    db_session: Session, snapshot: RepoSnapshot, user, local_git_repo: Path
+) -> None:
+    """Job isolation, executed rather than asserted from the design.
+
+    Two real studies of two different repositories run through the real
+    pipeline: one against a real local clone, one against a clone URL that
+    does not exist. The failing run must record its failure against its own
+    snapshot and touch nothing else — not the other snapshot's status, not
+    its files, not its graph rows.
+
+    They run sequentially here because the test session holds a single
+    database connection (see tests/conftest.py), not because the pipeline
+    requires it; what this proves is the property that makes running them
+    on separate workers safe, which is that every write either run makes is
+    scoped to its own `snapshot_id`.
+    """
+    from models.installation import Installation
+    from models.types import AccountType, ConnectionStatus, InstallationStatus
+
+    installation = Installation(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        provider="github",
+        external_id=str(uuid.uuid4()),
+        account_login="test-account",
+        account_type=AccountType.USER,
+        status=InstallationStatus.ACTIVE,
+    )
+    db_session.add(installation)
+    db_session.flush()
+    other_repository = Repository(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        installation_id=installation.id,
+        github_repo_id=str(uuid.uuid4()),
+        full_name="test/doomed",
+        default_branch="main",
+        private=False,
+        connection_status=ConnectionStatus.CONNECTED,
+    )
+    db_session.add(other_repository)
+    db_session.flush()
+    doomed = RepoSnapshot(
+        id=uuid.uuid4(),
+        repository_id=other_repository.id,
+        commit_sha=None,
+        status=SnapshotStatus.QUEUED,
+    )
+    db_session.add(doomed)
+    db_session.flush()
+
+    # The good study, run to completion first.
+    run_ingestion_pipeline(
+        db_session, snapshot_id=snapshot.id, provider=FakeRepositoryProvider(str(local_git_repo))
+    )
+    db_session.refresh(snapshot)
+    assert snapshot.status == SnapshotStatus.READY
+    good_file_count = db_session.query(File).filter(File.snapshot_id == snapshot.id).count()
+    assert good_file_count > 0
+
+    # The doomed study fails on a clone that cannot resolve.
+    with pytest.raises(CloneFailed):
+        run_ingestion_pipeline(
+            db_session,
+            snapshot_id=doomed.id,
+            provider=FakeRepositoryProvider("/nonexistent/path/to/nowhere.git"),
+        )
+
+    db_session.refresh(doomed)
+    db_session.refresh(snapshot)
+    assert doomed.status == SnapshotStatus.FAILED
+    assert doomed.error_message.startswith("cloning:")
+
+    # The healthy study is exactly as it was: status, rows and graph.
+    assert snapshot.status == SnapshotStatus.READY
+    assert snapshot.error_message is None
+    assert db_session.query(File).filter(File.snapshot_id == snapshot.id).count() == good_file_count
+    assert db_session.query(File).filter(File.snapshot_id == doomed.id).count() == 0
+    assert db_session.query(GraphNode).filter(GraphNode.snapshot_id == doomed.id).count() == 0

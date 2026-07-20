@@ -1,10 +1,17 @@
-import type { Repository, SnapshotStatus } from "@blueprint/shared-types";
+import type { Repository, Snapshot, SnapshotStatus } from "@blueprint/shared-types";
 import { getArchitectureGraph, listSnapshots } from "./api";
 
 export interface RepositoryFacts {
   topLanguage: string | null;
   confidencePercent: number | null;
   snapshotStatus: SnapshotStatus | null;
+  /** The latest snapshot in full, not just its status — the seed each
+   * `RepositoryCard` hands to `useSnapshotPolling` so it can follow its own
+   * study live. Carried here so a list of cards needs no extra round trip
+   * per card to start watching: several repositories can be studied at
+   * once, and each card has to track its own without the server rendering
+   * a stale status for the others. */
+  latestSnapshot: Snapshot | null;
 }
 
 /** One real fact per repository — top language and parse confidence
@@ -22,7 +29,12 @@ export async function getRepositoryFacts(
       if (!latest || latest.status !== "ready") {
         return [
           repository.id,
-          { topLanguage: null, confidencePercent: null, snapshotStatus: latest?.status ?? null },
+          {
+            topLanguage: null,
+            confidencePercent: null,
+            snapshotStatus: latest?.status ?? null,
+            latestSnapshot: latest,
+          },
         ];
       }
       const graph = await getArchitectureGraph(repository.id, latest.id);
@@ -32,7 +44,10 @@ export async function getRepositoryFacts(
         graph.file_count > 0
           ? Math.round((graph.tree_sitter_status.full_confidence_files / graph.file_count) * 100)
           : null;
-      return [repository.id, { topLanguage, confidencePercent, snapshotStatus: latest.status }];
+      return [
+        repository.id,
+        { topLanguage, confidencePercent, snapshotStatus: latest.status, latestSnapshot: latest },
+      ];
     }),
   );
   return new Map(entries);

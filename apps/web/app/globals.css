@@ -1,4 +1,9 @@
 @import "tailwindcss";
+/* HeroUI is the product's component layer (docs/DECISIONS.md): its
+   styles load layered, so every unlayered Blueprint token below wins
+   the cascade — HeroUI provides behavior and structure, Blueprint
+   keeps the look. Import order matters: tailwindcss first. */
+@import "@heroui/styles";
 /* Design tokens live once in packages/ui (RULES.md §18) — this app
    consumes them, it never redefines a color/spacing/type value itself. */
 @import "../../../packages/ui/src/theme.css";
@@ -14,9 +19,50 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* HeroUI's semantic variables, bridged to Blueprint's own palette so
+   every HeroUI component is dressed in the product's paper-and-graphite
+   monochrome and single electric accent. These blocks are unlayered on
+   purpose: unlayered declarations beat HeroUI's layered theme, in both
+   color schemes. HeroUI's calculated hover/soft variants derive from
+   these via color-mix, so they follow automatically. */
 :root {
   --background: var(--color-ink-50);
   --foreground: var(--color-ink-950);
+
+  /* Radius: compact controls sit on the 6px step (MASTER.md §3);
+     HeroUI's scale derives from --radius, fields match rounded-md. */
+  --radius: 0.5rem;
+  --field-radius: 0.375rem;
+  --field-border-width: 1px;
+
+  --accent: var(--color-accent-500);
+  --accent-foreground: #ffffff;
+  --muted: var(--color-ink-500);
+  --surface: #fffefc;
+  --surface-foreground: var(--color-ink-950);
+  --overlay: #fffefc;
+  --overlay-foreground: var(--color-ink-950);
+  --default: var(--color-ink-100);
+  --default-foreground: var(--color-ink-700);
+  --border: rgb(11 10 9 / 0.12);
+  --separator: var(--color-ink-200);
+  --focus: var(--color-accent-500);
+  --link: var(--color-accent-600);
+  --success: var(--color-status-ready);
+  --success-foreground: #ffffff;
+  --warning: var(--color-status-indexing);
+  --warning-foreground: var(--color-ink-950);
+  --danger: var(--color-status-failed);
+  --danger-foreground: #ffffff;
+  --field-background: rgb(255 255 255 / 0.7);
+  --field-foreground: var(--color-ink-950);
+  --field-placeholder: var(--color-ink-400);
+  --field-border: var(--color-ink-200);
+  --surface-shadow: var(--shadow-float);
+  --overlay-shadow: var(--shadow-float-lg);
+  /* Tooltips answer quickly — they carry labels, not lore. */
+  --tooltip-delay: 500ms;
+  --tooltip-close-delay: 250ms;
   /* Liquid material, light: warm-white panes suspended over the stage. */
   --glass-surface: rgb(255 254 252 / 0.72);
   --glass-surface-strong: rgb(255 254 252 / 0.86);
@@ -31,6 +77,23 @@
 .dark {
   --background: #080807;
   --foreground: var(--color-ink-50);
+
+  /* HeroUI semantics, dark: same bridge, charcoal end of the axis. */
+  --surface: #161513;
+  --surface-foreground: var(--color-ink-50);
+  --overlay: #1d1c1a;
+  --overlay-foreground: var(--color-ink-50);
+  --muted: var(--color-ink-400);
+  --default: var(--color-ink-800);
+  --default-foreground: var(--color-ink-200);
+  --border: rgb(255 255 255 / 0.12);
+  --separator: var(--color-ink-800);
+  --field-background: rgb(20 19 18 / 0.7);
+  --field-foreground: var(--color-ink-50);
+  --field-placeholder: var(--color-ink-500);
+  --field-border: var(--color-ink-700);
+  --surface-shadow: var(--shadow-float-dark);
+  --overlay-shadow: var(--shadow-float-dark);
   /* Liquid material, dark: warm charcoal panes lit from within. */
   --glass-surface: rgb(22 21 19 / 0.6);
   --glass-surface-strong: rgb(22 21 19 / 0.84);

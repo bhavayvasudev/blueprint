@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PipelineStage, Snapshot } from "@blueprint/shared-types";
+import { isSnapshotActive, type PipelineStage, type Snapshot } from "@blueprint/shared-types";
 import { ProportionBar, Reveal, Spinner, StatBlock, Text } from "@blueprint/ui";
-import { useSnapshotPolling, useTriggerSync } from "@/lib/use-snapshot-polling";
+import { useCancelStudy, useSnapshotPolling, useTriggerSync } from "@/lib/use-snapshot-polling";
 
 // The exact stages `services/pipeline_runner.py` runs today
 // (models.types.PipelineStage) — a direct mirror of that enum, in run order,
@@ -155,16 +155,76 @@ export function StudyProgress({
   const router = useRouter();
   const snapshotQuery = useSnapshotPolling(repositoryId, initialSnapshot);
   const syncMutation = useTriggerSync(repositoryId);
+  const snapshot = snapshotQuery.data ?? initialSnapshot;
+  const cancelMutation = useCancelStudy(repositoryId, snapshot.id);
   const [now, setNow] = useState(() => Date.now());
 
-  const snapshot = snapshotQuery.data ?? initialSnapshot;
   const discoveries = useDiscoveries(snapshot);
+  const isActive = isSnapshotActive(snapshot.status);
 
   useEffect(() => {
-    if (snapshot.status !== "indexing") return;
+    if (!isActive) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [snapshot.status]);
+  }, [isActive]);
+
+  if (snapshot.status === "queued") {
+    // Waiting for a worker, and said as plainly as that. Every other
+    // repository's study is irrelevant here except as the reason for the
+    // wait, so the panel names the position and nothing else — no stage
+    // list, because no stage is running, and no progress bar, because
+    // there is no progress to report yet. A fabricated one would be
+    // exactly the "AI theater" PRODUCT.md rules out.
+    return (
+      <div className="flex max-w-xl flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <Spinner size="sm" className="text-accent-500" />
+          <Text size="lg" tone="secondary" className="leading-relaxed">
+            Queued
+            {snapshot.queue_position !== null ? ` · position #${snapshot.queue_position}` : ""}
+          </Text>
+        </div>
+        <Text size="sm" tone="secondary">
+          {snapshot.queue_position !== null && snapshot.queue_position > 1
+            ? `Every worker is busy with another repository. ${snapshot.queue_position - 1} ${
+                snapshot.queue_position - 1 === 1 ? "study is" : "studies are"
+              } ahead of this one — it starts automatically as soon as a worker frees up.`
+            : "Every worker is busy with another repository. This study starts automatically as soon as one frees up."}
+          {" Waiting for "}
+          {elapsedLabel(snapshot.created_at, now)}.
+        </Text>
+        <button
+          type="button"
+          onClick={() => cancelMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
+          disabled={cancelMutation.isPending}
+          className="w-fit rounded-md border border-ink-200 px-3.5 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50 dark:border-ink-700 dark:text-ink-200 dark:hover:bg-ink-900"
+        >
+          {cancelMutation.isPending ? "Cancelling…" : "Cancel this study"}
+        </button>
+      </div>
+    );
+  }
+
+  if (snapshot.status === "cancelled") {
+    return (
+      <div className="flex max-w-xl flex-col gap-4">
+        <Text size="lg" tone="secondary" className="leading-relaxed">
+          You cancelled this study before it finished.
+        </Text>
+        <Text size="sm" tone="secondary">
+          Nothing was kept from the partial run — a half-read repository is not a briefing.
+        </Text>
+        <button
+          type="button"
+          onClick={() => syncMutation.mutate(undefined, { onSuccess: () => router.refresh() })}
+          disabled={syncMutation.isPending}
+          className="w-fit rounded-md bg-ink-950 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-ink-800 disabled:opacity-50 dark:bg-white dark:text-ink-950 dark:hover:bg-ink-100"
+        >
+          {syncMutation.isPending ? "Starting…" : "Study it again"}
+        </button>
+      </div>
+    );
+  }
 
   if (snapshot.status === "failed") {
     // `current_stage` is always cleared on failure (see
@@ -205,7 +265,13 @@ export function StudyProgress({
 
   const stageIndex = snapshot.current_stage ? STAGE_ORDER.indexOf(snapshot.current_stage) : -1;
   const counts = Object.keys(PROGRESS_LABELS).filter((key) => snapshot.progress?.[key] !== undefined);
-  const elapsedSeconds = Math.max(0, (now - new Date(snapshot.created_at).getTime()) / 1000);
+  // Timed from when a worker actually claimed this study, not from when it
+  // was enqueued. Under concurrency those differ by however long it queued,
+  // and counting the wait as study time would both overstate how long the
+  // repository took and make the ETA — which is measured over real work —
+  // read as wrong.
+  const studyStartedAt = snapshot.started_at ?? snapshot.created_at;
+  const elapsedSeconds = Math.max(0, (now - new Date(studyStartedAt).getTime()) / 1000);
   const remainingSeconds =
     snapshot.estimated_total_seconds !== null
       ? Math.max(0, snapshot.estimated_total_seconds - elapsedSeconds)
@@ -221,7 +287,7 @@ export function StudyProgress({
           total={STAGE_ORDER.length}
         />
         <Text size="sm" tone="secondary">
-          Studying for {elapsedLabel(snapshot.created_at, now)}
+          Studying for {elapsedLabel(studyStartedAt, now)}
           {snapshot.stage_started_at && snapshot.current_stage
             ? ` — on "${STAGE_LABELS[snapshot.current_stage]}" for ${elapsedLabel(snapshot.stage_started_at, now)}`
             : ""}

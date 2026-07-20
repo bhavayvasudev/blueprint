@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { analyzeGraph } from "@/lib/insights";
+import { studyHeadline } from "@/lib/study-headline";
 
 /** The Atlas — the map, and only the map. Every visualization of this
  * repository's shape lives here: the architecture constellation, the
@@ -162,9 +163,10 @@ export default async function AtlasPage(props: PageProps<"/repo/[id]">) {
               className="text-4xl font-semibold tracking-tight text-ink-950 sm:text-5xl dark:text-ink-50"
               style={{ textWrap: "balance" }}
             >
-              {latestSnapshot.status === "failed"
-                ? "The study failed — there is no model to walk."
-                : "I'm reading this repository."}
+              {studyHeadline(latestSnapshot.status, {
+                subject: "this repository",
+                absent: "there is no model to walk.",
+              })}
             </h1>
             <StudyProgress repositoryId={repository.id} initialSnapshot={latestSnapshot} />
           </div>

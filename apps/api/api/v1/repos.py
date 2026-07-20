@@ -44,6 +44,7 @@ from services.repository_status_service import (
 )
 from services.search_service import search_repository
 from services.snapshot_service import (
+    cancel_snapshot,
     get_architecture_graph,
     get_snapshot,
     latest_ready_snapshot,
@@ -154,9 +155,31 @@ def sync(
 ) -> SnapshotOut:
     """Triggers a pipeline run (RULES.md §14: returns immediately with a
     job/request ID — here, the new snapshot's own ID — rather than holding
-    the request open for the full pipeline duration)."""
+    the request open for the full pipeline duration).
+
+    Accepts unconditionally, whatever else is being studied. The returned
+    snapshot is `queued` until a worker in the pool claims it and `indexing`
+    after — the caller polls `GET .../snapshots/{id}` for both, exactly as
+    it already did."""
     repository = get_connected_repository(db, user=user, repository_id=repository_id)
     snapshot = trigger_sync(db, repository=repository)
+    return SnapshotOut.model_validate(snapshot)
+
+
+@router.post("/{repository_id}/snapshots/{snapshot_id}/cancel", response_model=SnapshotOut)
+def cancel(
+    repository_id: uuid.UUID,
+    snapshot_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> SnapshotOut:
+    """Stops one queued or running study. Scoped to a single snapshot by its
+    own ID — cancelling one repository's study has no effect on any other,
+    which is the whole contract concurrent studies are built on. 409 if it
+    has already finished, rather than reporting a completed study as
+    cancelled."""
+    repository = get_connected_repository(db, user=user, repository_id=repository_id)
+    snapshot = cancel_snapshot(db, repository=repository, snapshot_id=snapshot_id)
     return SnapshotOut.model_validate(snapshot)
 
 
